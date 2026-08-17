@@ -1,0 +1,14 @@
+# ===== 核心 =====
+pydantic>=2.0
+python-dotenv>=1.0
+openai>=1.0
+# ===== 前端（Streamlit 网页应用）=====
+streamlit>=1.30
+# ===== 测试 =====
+pytest>=8.0
+# ===== 第二步：PDF 解析 =====
+pdfplumber>=0.11
+# ===== 第三步：浏览器自动化（运行时）=====
+playwright>=1.40
+# ===== 第四步：外部薪资 API（HTTP 请求）=====
+httpx>=0.27

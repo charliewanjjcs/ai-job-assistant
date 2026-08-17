@@ -1,0 +1,25 @@
+# ===== 密钥 =====
+config/.env
+.env
+
+# ===== 沙盒（测试数据/缓存，不入库）=====
+sandbox/
+
+# ===== Python =====
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+.venv/
+venv/
+
+# ===== 备份（本地防误删，不入库）=====
+*.bak
+
+# ===== WorkBuddy 内部数据 =====
+.workbuddy/
+
+# ===== 编辑器 / OS =====
+.idea/
+.vscode/
+.DS_Store
