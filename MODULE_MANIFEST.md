@@ -28,11 +28,11 @@
 ## modules/（可插拔的肉）
 | 模块 | 路径 | 实现接口 | 状态 | 锁定 |
 |------|------|----------|------|------|
-| PDF 简历解析 | `modules/resume_pdf/` | `ResumeParser` | planned | — |
+| PDF 简历解析 | `modules/resume_pdf/pdf_parser.py` | `PdfResumeParser.parse(path:str) -> UserProfile`（pypdf 抽文本 + 复用 core.parsers.parse_resume_text，不修改 core） | locked | phase2 |
 | URL 读取 JD | `modules/jd_url/` | `JdSource` | planned | — |
 | 外部薪资 API | `modules/salary_api/` | `SalaryProvider` | planned | — |
 
 ## app/（Streamlit 前端）
 | 模块 | 路径 | 状态 | 锁定 |
 |------|------|------|------|
-| 入口/表单/展示 | `app/main.py` | locked(phase1) + 接入文本自动解析（只填空字段，不改核心算法） | phase1 |
+| 入口/表单/展示 | `app/main.py` | locked(phase1) + 接入文本自动解析 + Phase2 PDF 上传（只填空字段，不改核心算法） | phase1 |

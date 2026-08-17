@@ -21,6 +21,7 @@ from core.analyzer import CoreAnalyzer
 from core.llm import DeepSeekClient
 from core.models import Currency, JdInfo, PayPeriod, SalaryAmount, UserProfile
 from core.parsers import parse_jd_text, parse_resume_text
+from modules.resume_pdf.pdf_parser import PdfResumeParser
 
 
 class DemoLLM:
@@ -149,7 +150,7 @@ def render_interview(r):
 def main():
     st.set_page_config(page_title="AI 求职助手", layout="wide")
     st.title("AI 求职助手")
-    st.caption("Phase 1 单机版分析器：粘贴简历与 JD，查看薪资/能力/前景/面试分析")
+    st.caption("单机版分析器：支持上传 PDF 简历 / 粘贴文本，查看薪资/能力/前景/面试分析")
 
     with st.sidebar:
         st.header("模式")
@@ -165,6 +166,39 @@ def main():
 
     with c1:
         st.header("候选人画像")
+        # Phase2：上传 PDF 简历，自动抽取并填充下方字段（手动字段仍优先、可改）
+        uploaded = st.file_uploader("上传简历 PDF（可选，自动填充下方字段）", type=["pdf"])
+        if uploaded is not None:
+            sig = f"{uploaded.name}:{uploaded.size}"
+            if st.session_state.get("_pdf_last") != sig:  # 仅处理新上传，避免覆盖手动编辑
+                st.session_state["_pdf_last"] = sig
+                up_dir = os.path.join(ROOT, "sandbox", "uploads")
+                os.makedirs(up_dir, exist_ok=True)
+                up_path = os.path.join(up_dir, uploaded.name)
+                with open(up_path, "wb") as f:
+                    f.write(uploaded.getbuffer())
+                try:
+                    parser = PdfResumeParser()
+                    text = parser.extract_text(up_path)
+                    if not text:
+                        st.warning("该 PDF 无文字层（可能是扫描件），请改用下方文本粘贴。")
+                    else:
+                        prof = parser.parse(up_path)
+                        if prof.raw_resume:
+                            st.session_state["resume"] = prof.raw_resume
+                        if prof.skills:
+                            st.session_state["skills"] = ", ".join(prof.skills)
+                        if prof.target_role:
+                            st.session_state["target_role"] = prof.target_role
+                        if prof.personality:
+                            st.session_state["personality"] = prof.personality
+                        if prof.city:
+                            st.session_state["city"] = prof.city
+                        if prof.expected_salary:
+                            st.session_state["exp_wan"] = round(prof.expected_salary.value / 10000.0, 1)
+                        st.success("已从 PDF 提取并填充字段，可手动调整。")
+                except Exception as e:
+                    st.error(f"PDF 解析失败：{e}")
         st.text_area("简历文本（粘贴）", key="resume", height=160)
         st.text_input("目标岗位", key="target_role")
         st.text_input("掌握的技能（逗号分隔）", key="skills", placeholder="Python, MySQL, Redis")
