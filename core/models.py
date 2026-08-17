@@ -99,7 +99,8 @@ class CareerProspect(BaseModel):
     promotion: str = ""                      # 晋升机会
     raise_outlook: str = ""                  # 加薪机会
     jump_outlook: str = ""                   # 跳槽机会
-    overall: str = ""
+    daily: str = ""                          # 日常工作
+    overall: str = ""                        # 原始完整文本
 
 
 class InterviewQA(BaseModel):

@@ -34,4 +34,4 @@
 ## app/（Streamlit 前端）
 | 模块 | 路径 | 状态 | 锁定 |
 |------|------|------|------|
-| 入口/表单/展示 | `app/main.py` | active | phase1 |
+| 入口/表单/展示 | `app/main.py` | locked | phase1 |
