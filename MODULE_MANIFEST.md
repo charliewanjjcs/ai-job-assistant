@@ -23,6 +23,7 @@
 | 前景/工作 | `core/career.py` | `CareerAnalyzer.analyze(profile, jd)` | locked | phase1 |
 | 面试问答 | `core/interview.py` | `InterviewAnalyzer.analyze(profile, jd)` | locked | phase1 |
 | 编排入口 | `core/analyzer.py` | `CoreAnalyzer.analyze(profile, jd) -> Report` | locked | phase1 |
+| 文本占位解析 | `core/parsers.py` | `parse_resume_text(...)`, `parse_jd_text(...)`（MVP 占位，Phase2/3 同接口替换） | active | — |
 
 ## modules/（可插拔的肉）
 | 模块 | 路径 | 实现接口 | 状态 | 锁定 |
@@ -34,4 +35,4 @@
 ## app/（Streamlit 前端）
 | 模块 | 路径 | 状态 | 锁定 |
 |------|------|------|------|
-| 入口/表单/展示 | `app/main.py` | locked | phase1 |
+| 入口/表单/展示 | `app/main.py` | locked(phase1) + 接入文本自动解析（只填空字段，不改核心算法） | phase1 |

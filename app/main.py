@@ -20,6 +20,7 @@ import streamlit as st
 from core.analyzer import CoreAnalyzer
 from core.llm import DeepSeekClient
 from core.models import Currency, JdInfo, PayPeriod, SalaryAmount, UserProfile
+from core.parsers import parse_jd_text, parse_resume_text
 
 
 class DemoLLM:
@@ -45,10 +46,13 @@ class DemoLLM:
 
 def build_profile():
     resume = st.session_state.get("resume", "")
-    skills = [s.strip() for s in st.session_state.get("skills", "").split(",") if s.strip()]
-    personality = st.session_state.get("personality", "") or None
-    target_role = st.session_state.get("target_role", "") or None
-    city = st.session_state.get("city", "") or None
+    # 手动字段优先；未填时从粘贴的简历文本启发式抽取（MVP 占位解析）
+    parsed = parse_resume_text(resume) if resume else {}
+    skills_raw = st.session_state.get("skills", "")
+    skills = [s.strip() for s in skills_raw.split(",") if s.strip()] or (parsed.get("skills") or [])
+    personality = st.session_state.get("personality", "") or parsed.get("personality")
+    target_role = st.session_state.get("target_role", "") or parsed.get("target_role")
+    city = st.session_state.get("city", "") or parsed.get("city")
     exp_wan = st.session_state.get("exp_wan", 0.0)
     is_usd = st.session_state.get("exp_usd", False)
     expected = None
@@ -58,6 +62,10 @@ def build_profile():
             currency=Currency.USD if is_usd else Currency.CNY,
             period=PayPeriod.ANNUAL,
         )
+    else:
+        pexp = parsed.get("expected_salary")
+        if pexp:
+            expected = SalaryAmount(value=pexp, currency=Currency.CNY, period=PayPeriod.ANNUAL)
     return UserProfile(
         raw_resume=resume or None,
         skills=skills,
@@ -69,12 +77,16 @@ def build_profile():
 
 
 def build_jd():
-    title = st.session_state.get("jd_title", "") or None
-    company = st.session_state.get("jd_company", "") or None
-    city = st.session_state.get("jd_city", "") or None
-    req = [s.strip() for s in st.session_state.get("jd_req", "").split(",") if s.strip()]
-    pref = [s.strip() for s in st.session_state.get("jd_pref", "").split(",") if s.strip()]
     raw = st.session_state.get("jd_text", "")
+    # 手动字段优先；未填时从粘贴的 JD 文本启发式抽取（MVP 占位解析）
+    parsed = parse_jd_text(raw) if raw else {}
+    title = st.session_state.get("jd_title", "") or parsed.get("title")
+    company = st.session_state.get("jd_company", "") or parsed.get("company")
+    city = st.session_state.get("jd_city", "") or parsed.get("city")
+    req_raw = st.session_state.get("jd_req", "")
+    req = [s.strip() for s in req_raw.split(",") if s.strip()] or (parsed.get("required_skills") or [])
+    pref_raw = st.session_state.get("jd_pref", "")
+    pref = [s.strip() for s in pref_raw.split(",") if s.strip()] or (parsed.get("preferred_skills") or [])
     return JdInfo(
         title=title, company=company, city=city,
         required_skills=req, preferred_skills=pref, raw_text=raw or "",
