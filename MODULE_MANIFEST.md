@@ -15,15 +15,15 @@
 ## core/（核心算法，骨）
 | 模块 | 路径 | 公开接口 | 状态 | 锁定 |
 |------|------|----------|------|------|
-| 数据模型 | `core/models.py` | `UserProfile, JdInfo, Report, SalaryAmount, SalaryAnalysis, SkillMatchResult, PersonalityMatchResult, CareerProspect, InterviewQA, ImprovementSuggestion` + `to_annual_cny()` | locked | phase1 |
+| 数据模型 | `core/models.py` | `UserProfile(idel_job/languages/availability + 原字段), JdInfo(required_languages/prefers_immediate), Report(language_match/availability_match), SalaryAmount, LanguageProficiency, LanguageMatchResult, AvailabilityMatchResult, Availability/LanguageLevel/Currency/HKD+HOURLY` + `to_annual_cny()` | locked(演进) | core-refine-locked |
 | 抽象接口 | `core/interfaces.py` | `SalaryProvider, ResumeParser, JdSource, Analyzer`（均为 ABC） | locked | phase1 |
 | 薪资匹配 | `core/salary.py` | `SalaryMatcher.analyze(...)`, `RuleBasedSalaryProvider` | locked | phase1 |
-| 能力匹配 | `core/matcher.py` | `SkillMatcher.match(...)`, `PersonalityMatcher.match(...)` | locked | phase1 |
+| 能力匹配 | `core/matcher.py` | `SkillMatcher.match(...)`, `PersonalityMatcher.match(...)`, `LanguageMatcher.match(...)`, `AvailabilityMatcher.match(...)`, `build_improvements(...)` | locked(演进) | core-refine-locked |
 | LLM 封装 | `core/llm.py` | `DeepSeekClient.complete(prompt)` | locked | phase1 |
 | 前景/工作 | `core/career.py` | `CareerAnalyzer.analyze(profile, jd)` | locked | phase1 |
 | 面试问答 | `core/interview.py` | `InterviewAnalyzer.analyze(profile, jd)` | locked | phase1 |
 | 编排入口 | `core/analyzer.py` | `CoreAnalyzer.analyze(profile, jd) -> Report` | locked | phase1 |
-| 文本占位解析 | `core/parsers.py` | `parse_resume_text(...)`, `parse_jd_text(...)`（MVP 占位，Phase2/3 同接口替换） | active | — |
+| 文本占位解析 | `core/parsers.py` | `parse_resume_text(...)`, `parse_jd_text(...)`, `extract_skills/extract_personality/parse_expected_salary/extract_jd_languages/extract_prefers_immediate`（技能=词表+软技能词表+技能字段字面；性格取原文字面；薪资识别时薪/月薪/年薪+币种；JD 抽语言/到岗偏好） | locked | core-refine-locked |
 
 ## modules/（可插拔的肉）
 | 模块 | 路径 | 实现接口 | 状态 | 锁定 |
@@ -35,4 +35,4 @@
 ## app/（Streamlit 前端）
 | 模块 | 路径 | 状态 | 锁定 |
 |------|------|------|------|
-| 入口/表单/展示 | `app/main.py` | locked(phase1) + 接入文本自动解析 + Phase2 PDF 上传（只填空字段，不改核心算法） | phase1 |
+| 入口/表单/展示 | `app/main.py` | locked(演进)：薪资改时薪/月薪/年薪+币种选择；新增语言(语言+3档熟练度)、到岗时间(手动)；目标岗位→理想工作(手动)；JD 自动识别语言/到岗偏好；新增「语言匹配」「到岗匹配」标签页 | core-refine-locked |

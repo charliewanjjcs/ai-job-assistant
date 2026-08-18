@@ -15,7 +15,7 @@ import os
 from typing import Optional
 
 from core.interfaces import ResumeParser
-from core.models import Currency, PayPeriod, SalaryAmount, UserProfile
+from core.models import UserProfile
 from core.parsers import parse_resume_text
 
 try:
@@ -48,24 +48,19 @@ class PdfResumeParser(ResumeParser):
         return "\n".join(chunks).strip()
 
     def parse(self, raw: str) -> UserProfile:
-        """raw = PDF 文件路径。返回 UserProfile（raw_resume 存抽取出的文本）。"""
+        """raw = PDF 文件路径。返回 UserProfile（raw_resume 存抽取出的文本）。
+
+        注：「理想工作」属用户主观偏好，不由简历推断；语言/到岗时间也由用户在前端手动填写。
+        """
         text = self.extract_text(raw)
         if not text:
             # 扫描件 / 无文字层：降级，不抛异常，由前端提示改用文本粘贴
             return UserProfile(raw_resume=None)
         parsed = parse_resume_text(text)
-        expected = None
-        if parsed.get("expected_salary"):
-            expected = SalaryAmount(
-                value=float(parsed["expected_salary"]),
-                currency=Currency.CNY,
-                period=PayPeriod.ANNUAL,
-            )
         return UserProfile(
             raw_resume=text,
             skills=parsed.get("skills") or [],
             personality=parsed.get("personality"),
-            target_role=parsed.get("target_role"),
             city=parsed.get("city"),
-            expected_salary=expected,
+            expected_salary=parsed.get("expected_salary"),  # 已是 SalaryAmount | None
         )

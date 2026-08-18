@@ -1,6 +1,6 @@
-"""AI 求职助手 —— Streamlit 前端（Phase 1：单机版分析器）。
+"""AI 求职助手 —— Streamlit 前端。
 
-流程：用户粘贴简历/画像 + 粘贴 JD -> CoreAnalyzer -> 六维度结果展示。
+流程：用户填写画像（可上传 PDF / 粘贴文本自动抽取） + 填写/粘贴 JD -> CoreAnalyzer -> 结果展示。
 演示模式可用（无需 API Key）；真实模式读取 config/.env 的 DeepSeek Key。
 """
 import os
@@ -19,9 +19,26 @@ import streamlit as st
 
 from core.analyzer import CoreAnalyzer
 from core.llm import DeepSeekClient
-from core.models import Currency, JdInfo, PayPeriod, SalaryAmount, UserProfile
+from core.models import (
+    Availability,
+    Currency,
+    JdInfo,
+    LanguageLevel,
+    LanguageProficiency,
+    PayPeriod,
+    SalaryAmount,
+    UserProfile,
+)
 from core.parsers import parse_jd_text, parse_resume_text
 from modules.resume_pdf.pdf_parser import PdfResumeParser
+
+# 选项常量
+LANG_OPTIONS = ["英语", "粤语", "普通话", "日语", "法语", "韩语", "德语", "西班牙语", "其他"]
+LEVEL_OPTIONS = ["基础", "熟练", "母语"]
+CURRENCY_OPTIONS = [("¥ 人民币 (CNY)", "CNY"), ("HK$ 港币 (HKD)", "HKD")]
+PERIOD_OPTIONS = [("年薪", "annual"), ("月薪", "monthly"), ("时薪", "hourly")]
+AVAIL_OPTIONS = ["立刻", "一周内", "一个月", "两个月", "三个月", "更长"]
+EXP_LABELS = {"annual": "预期年薪（万元）", "monthly": "预期月薪（元）", "hourly": "预期时薪（元）"}
 
 
 class DemoLLM:
@@ -45,41 +62,81 @@ class DemoLLM:
         )
 
 
+def _idx(options, value):
+    try:
+        return options.index(value)
+    except ValueError:
+        return 0
+
+
+def _lang_manager(state_key: str, header: str):
+    """语言 + 熟练度 增删管理器（添加/移除式，避免动态索引编辑的坑）。"""
+    st.markdown(f"**{header}**")
+    items = st.session_state.get(state_key, [])
+    if items:
+        for i, it in enumerate(items):
+            c1, c2, c3 = st.columns([2, 1, 0.8])
+            c1.write(it["language"])
+            c2.write(it["level"])
+            if c3.button("移除", key=f"{state_key}_rm_{i}"):
+                items.pop(i)
+                st.session_state[state_key] = items
+                st.rerun()
+    else:
+        st.caption("尚未添加")
+    a, b, c = st.columns([2, 1, 0.8])
+    lang = a.selectbox("语言", LANG_OPTIONS, key=f"{state_key}_add_lang", label_visibility="collapsed")
+    lvl = b.selectbox("熟练度", LEVEL_OPTIONS, key=f"{state_key}_add_lvl", label_visibility="collapsed")
+    if c.button("添加", key=f"{state_key}_add_btn"):
+        items.append({"language": lang, "level": lvl})
+        st.session_state[state_key] = items
+        st.rerun()
+    return st.session_state.get(state_key, [])
+
+
 def build_profile():
     resume = st.session_state.get("resume", "")
-    # 手动字段优先；未填时从粘贴的简历文本启发式抽取（MVP 占位解析）
     parsed = parse_resume_text(resume) if resume else {}
     skills_raw = st.session_state.get("skills", "")
     skills = [s.strip() for s in skills_raw.split(",") if s.strip()] or (parsed.get("skills") or [])
     personality = st.session_state.get("personality", "") or parsed.get("personality")
-    target_role = st.session_state.get("target_role", "") or parsed.get("target_role")
+    ideal_job = st.session_state.get("ideal_job", "") or None
     city = st.session_state.get("city", "") or parsed.get("city")
-    exp_wan = st.session_state.get("exp_wan", 0.0)
-    is_usd = st.session_state.get("exp_usd", False)
+
+    # 预期薪资：手动优先；手动未填则用解析结果
+    period = st.session_state.get("exp_period", "annual")
+    currency = st.session_state.get("exp_currency", "CNY")
+    value = st.session_state.get("exp_value", 0.0)
     expected = None
-    if exp_wan and exp_wan > 0:
-        expected = SalaryAmount(
-            value=float(exp_wan) * 10000.0,
-            currency=Currency.USD if is_usd else Currency.CNY,
-            period=PayPeriod.ANNUAL,
-        )
+    if value and value > 0:
+        v = float(value) * 10000.0 if period == "annual" else float(value)
+        expected = SalaryAmount(value=v, currency=Currency(currency), period=PayPeriod(period))
     else:
         pexp = parsed.get("expected_salary")
         if pexp:
-            expected = SalaryAmount(value=pexp, currency=Currency.CNY, period=PayPeriod.ANNUAL)
+            expected = pexp
+
+    langs = [
+        LanguageProficiency(language=e["language"], level=LanguageLevel(e["level"]))
+        for e in st.session_state.get("lang_list", [])
+    ]
+    av = st.session_state.get("availability")
+    availability = Availability(av) if av else None
+
     return UserProfile(
         raw_resume=resume or None,
+        ideal_job=ideal_job,
         skills=skills,
         personality=personality,
-        target_role=target_role,
-        city=city,
         expected_salary=expected,
+        languages=langs,
+        availability=availability,
+        city=city,
     )
 
 
 def build_jd():
     raw = st.session_state.get("jd_text", "")
-    # 手动字段优先；未填时从粘贴的 JD 文本启发式抽取（MVP 占位解析）
     parsed = parse_jd_text(raw) if raw else {}
     title = st.session_state.get("jd_title", "") or parsed.get("title")
     company = st.session_state.get("jd_company", "") or parsed.get("company")
@@ -88,9 +145,17 @@ def build_jd():
     req = [s.strip() for s in req_raw.split(",") if s.strip()] or (parsed.get("required_skills") or [])
     pref_raw = st.session_state.get("jd_pref", "")
     pref = [s.strip() for s in pref_raw.split(",") if s.strip()] or (parsed.get("preferred_skills") or [])
+    jd_langs = [
+        LanguageProficiency(language=e["language"], level=LanguageLevel(e["level"]))
+        for e in st.session_state.get("jd_lang_list", [])
+    ]
+    prefers = bool(st.session_state.get("jd_prefers_immediate", parsed.get("prefers_immediate", False)))
     return JdInfo(
         title=title, company=company, city=city,
-        required_skills=req, preferred_skills=pref, raw_text=raw or "",
+        required_skills=req, preferred_skills=pref,
+        required_languages=jd_langs,
+        prefers_immediate=prefers,
+        raw_text=raw or "",
     )
 
 
@@ -116,6 +181,29 @@ def render_skill(r):
     st.write(f"**已匹配：** {', '.join(sm.matched) or '无'}")
     st.write(f"**缺失-必选：** {', '.join(sm.missing_required) or '无'}")
     st.write(f"**缺失-加分：** {', '.join(sm.missing_preferred) or '无'}")
+
+
+def render_language(r):
+    lm = r.language_match
+    if lm is None:
+        st.write("—")
+        return
+    st.subheader(f"语言匹配度：{lm.match_score}/100")
+    st.write(f"**已匹配：** {', '.join(lm.matched) or '无'}")
+    st.write(f"**缺失：** {', '.join(lm.missing) or '无'}")
+    for n in lm.notes:
+        st.write(f"- {n}")
+
+
+def render_availability(r):
+    am = r.availability_match
+    if am is None:
+        st.write("—")
+        return
+    st.subheader("到岗匹配")
+    st.write(f"**判定：{am.fit}**")
+    if am.note:
+        st.write(am.note)
 
 
 def render_improve(r):
@@ -150,7 +238,7 @@ def render_interview(r):
 def main():
     st.set_page_config(page_title="AI 求职助手", layout="wide")
     st.title("AI 求职助手")
-    st.caption("单机版分析器：支持上传 PDF 简历 / 粘贴文本，查看薪资/能力/前景/面试分析")
+    st.caption("单机版分析器：支持上传 PDF 简历 / 粘贴文本，查看薪资/能力/语言/到岗/前景/面试分析")
 
     with st.sidebar:
         st.header("模式")
@@ -188,25 +276,50 @@ def main():
                             st.session_state["resume"] = prof.raw_resume
                         if prof.skills:
                             st.session_state["skills"] = ", ".join(prof.skills)
-                        if prof.target_role:
-                            st.session_state["target_role"] = prof.target_role
                         if prof.personality:
                             st.session_state["personality"] = prof.personality
                         if prof.city:
                             st.session_state["city"] = prof.city
                         if prof.expected_salary:
-                            st.session_state["exp_wan"] = round(prof.expected_salary.value / 10000.0, 1)
+                            es = prof.expected_salary
+                            st.session_state["exp_period"] = es.period.value
+                            st.session_state["exp_value"] = (
+                                round(es.value / 10000.0, 1) if es.period.value == "annual" else es.value
+                            )
+                            st.session_state["exp_currency"] = es.currency.value
                         st.success("已从 PDF 提取并填充字段，可手动调整。")
                 except Exception as e:
                     st.error(f"PDF 解析失败：{e}")
-        st.text_area("简历文本（粘贴）", key="resume", height=160)
-        st.text_input("目标岗位", key="target_role")
+
+        st.text_area("简历文本（粘贴）", key="resume", height=140)
+        st.text_area(
+            "理想工作（手动填写，不读简历）",
+            key="ideal_job", height=70,
+            placeholder="例：想要稳定、不追求高薪；或想赚得多愿意拼搏；或喜欢坐办公室/户外；"
+                        "或需要常与人沟通；或一直对着电脑数据。",
+        )
         st.text_input("掌握的技能（逗号分隔）", key="skills", placeholder="Python, MySQL, Redis")
-        st.text_input("性格描述", key="personality", placeholder="细心、抗压、沟通好")
+        st.text_input("性格描述（取简历原话）", key="personality", placeholder="细心、抗压、沟通好")
         st.text_input("期望工作城市", key="city")
-        col_a, col_b = st.columns([2, 1])
-        col_a.number_input("预期年薪（万元）", key="exp_wan", min_value=0.0, step=1.0)
-        col_b.checkbox("以美元计", key="exp_usd")
+
+        # 预期薪资：时薪/月薪/年薪 + 币种（手动填充；PDF 解析可自动带出）
+        st.markdown("**预期薪资**")
+        ecol1, ecol2 = st.columns([2, 2])
+        period = ecol1.selectbox("计薪方式", PERIOD_OPTIONS, key="exp_period")
+        currency = ecol2.selectbox("币种", CURRENCY_OPTIONS, key="exp_currency")
+        st.number_input(EXP_LABELS[period], key="exp_value", min_value=0.0, step=1.0)
+
+        # 语言（手动选择：语言 + 熟练度 3 档）
+        st.markdown("**语言能力（手动选择，用于匹配 JD 语言要求）**")
+        _lang_manager("lang_list", "已掌握语言")
+
+        # 到岗时间（手动选择）
+        st.markdown("**到岗时间（手动选择）**")
+        st.selectbox(
+            "可到岗时间",
+            ["未填写"] + AVAIL_OPTIONS,
+            key="availability",
+        )
 
     with c2:
         st.header("职位描述 JD")
@@ -215,8 +328,23 @@ def main():
         st.text_input("城市", key="jd_city")
         st.text_input("必选技能（逗号分隔）", key="jd_req", placeholder="Python, Go, MySQL")
         st.text_input("加分技能（逗号分隔）", key="jd_pref", placeholder="Docker, K8s")
-        st.text_area("JD 原文（粘贴）", key="jd_text", height=200,
+        st.text_area("JD 原文（粘贴）", key="jd_text", height=160,
                      placeholder="把招聘网页上的 JD 文本粘贴到这里（第三步将支持直接填 URL）")
+
+        # JD 语言要求（自动识别 + 手动增删）
+        jd_text = st.session_state.get("jd_text", "")
+        if jd_text:
+            sig = f"jd:{len(jd_text)}:{hash(jd_text)}"
+            if st.session_state.get("_jd_last") != sig:
+                st.session_state["_jd_last"] = sig
+                pjd = parse_jd_text(jd_text)
+                st.session_state["jd_lang_list"] = [
+                    {"language": l.language, "level": l.level.value} for l in pjd["required_languages"]
+                ]
+                st.session_state["jd_prefers_immediate"] = pjd["prefers_immediate"]
+        st.markdown("**JD 语言要求（自动识别 + 可增删）**")
+        _lang_manager("jd_lang_list", "JD 要求的语言")
+        st.checkbox("JD 偏好「尽快到岗 / Immediate available」", key="jd_prefers_immediate")
 
     if st.button("开始分析", type="primary"):
         profile = build_profile()
@@ -230,18 +358,25 @@ def main():
             st.error(f"分析失败：{e}")
             return
 
-        tabs = st.tabs(["薪资匹配", "能力匹配", "提升建议", "岗位前景", "日常工作", "面试问题"])
+        tabs = st.tabs([
+            "薪资匹配", "能力匹配", "语言匹配", "到岗匹配",
+            "提升建议", "岗位前景", "日常工作", "面试问题",
+        ])
         with tabs[0]:
             render_salary(report)
         with tabs[1]:
             render_skill(report)
         with tabs[2]:
-            render_improve(report)
+            render_language(report)
         with tabs[3]:
-            render_career(report)
+            render_availability(report)
         with tabs[4]:
-            render_daily(report)
+            render_improve(report)
         with tabs[5]:
+            render_career(report)
+        with tabs[6]:
+            render_daily(report)
+        with tabs[7]:
             render_interview(report)
 
 

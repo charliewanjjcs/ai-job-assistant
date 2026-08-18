@@ -58,12 +58,14 @@ def test_extract_text_ascii(parser, tmp_path):
 def test_parse_routes_through_parser(parser, monkeypatch):
     monkeypatch.setattr(parser, "extract_text", lambda raw: SAMPLE_RESUME)
     prof = parser.parse("dummy.pdf")
-    assert prof.target_role == "后端开发工程师"
+    # 理想工作属用户手动填写，解析器不抽取
+    assert prof.ideal_job is None
     assert set(["Python", "MySQL", "Redis", "Docker"]).issubset(set(prof.skills))
     assert prof.city == "深圳"
     assert prof.personality == "细心、抗压、喜欢钻研"
     assert prof.expected_salary is not None
     assert prof.expected_salary.value == 350000.0
+    assert prof.expected_salary.period.value == "annual"
     assert prof.raw_resume == SAMPLE_RESUME
 
 
