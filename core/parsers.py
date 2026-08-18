@@ -88,9 +88,12 @@ def parse_resume_text(text: str) -> dict:
 def parse_jd_text(text: str) -> dict:
     """从 JD 自由文本抽取岗位结构化字段（区分必选/加分技能）。
 
-    加分判定按「子句」粒度：仅当包含该技能的那一句（按逗号/顿号/分号切分）出现
-    「优先/加分」才视为加分项，避免「熟悉 MySQL、Redis，有高并发经验者优先」把
-    MySQL/Redis 误判为加分。
+    加分判定按「子句」粒度：仅当包含该技能的那一句（按逗号/分号/句号切分，
+    **顿号「、」视为同一技能列表、不当分隔符**）出现「优先/加分」才视为加分项。
+
+    这样既能把「熟悉 Docker、Kubernetes 者优先」整体判为加分（者优先跨顿号生效），
+    又不会把「熟悉 MySQL、Redis，有高并发经验者优先」里的 MySQL/Redis 误判为加分
+    （该句的优先指的是「高并发经验」，在逗号之后的另一子句）。
     """
     if not text:
         return {
@@ -104,7 +107,7 @@ def parse_jd_text(text: str) -> dict:
         for s in skills:
             if s.lower() not in line.lower():
                 continue
-            clauses = re.split(r"[，,、；;。\n]", line)
+            clauses = re.split(r"[，,；;。\n]", line)
             clause = next((c for c in clauses if s.lower() in c.lower()), line)
             if re.search(r"优先|加分|prefer|优先者", clause, re.I):
                 if s not in preferred:

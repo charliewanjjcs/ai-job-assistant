@@ -1,7 +1,6 @@
 """文本解析器 TDD 用例：覆盖简历/JD 结构化抽取。
 
 对应流程：先写极端/关键用例 -> 实现 core/parsers.py -> 跑绿。
-（注：本会话环境无法执行 pytest 验证，用例已就位，请在本地 `pytest tests/` 确认。）
 """
 from core.parsers import (
     extract_skills,
@@ -66,3 +65,14 @@ def test_parse_jd_salary_line_not_required_pref():
     t = "薪资：25-40K·13薪\n精通 Python"
     j = parse_jd_text(t)
     assert "Python" in j["required_skills"]
+
+
+def test_parse_jd_priority_no_leak_to_unrelated_skills():
+    # 「熟悉 MySQL、Redis，有高并发经验者优先」：优先指的是「高并发经验」，
+    # 在逗号之后的另一子句，不应把 MySQL/Redis 误判为加分项
+    t = "熟悉 MySQL、Redis，有高并发经验者优先"
+    j = parse_jd_text(t)
+    assert "MySQL" in j["required_skills"]
+    assert "Redis" in j["required_skills"]
+    assert "MySQL" not in j["preferred_skills"]
+    assert "Redis" not in j["preferred_skills"]

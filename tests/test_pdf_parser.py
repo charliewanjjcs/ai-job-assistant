@@ -77,7 +77,9 @@ def test_scan_pdf_returns_none(parser, tmp_path):
 
 def test_empty_pdf_extract_returns_empty(parser, tmp_path):
     p = tmp_path / "empty.pdf"
-    FPDF().add_page().output(str(p))
+    pdf = FPDF()
+    pdf.add_page()
+    pdf.output(str(p))
     assert parser.extract_text(str(p)) == ""
 
 
