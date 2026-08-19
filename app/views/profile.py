@@ -115,15 +115,16 @@ def render() -> None:
                     pass
 
     st.text_area("简历文本（粘贴）", key="resume", height=140)
+    st.markdown("**理想工作**")
     st.text_area(
         "理想工作",
         key="ideal_job", height=70,
         placeholder="例：想要稳定、不追求高薪；或想赚得多愿意拼搏；或喜欢坐办公室/户外；"
                     "或需要常与人沟通；或一直对着电脑数据。",
+        label_visibility="collapsed",
     )
 
     st.markdown("**掌握的技能（个人技能库）**")
-    st.caption("输入即联想（如 detail → detail-oriented），点击或回车加入；也可添加词库外自定义技能。")
     skill_editor(uid)
 
     st.text_input("性格描述", key="personality", placeholder="外向/内向、细心、抗压、沟通好等")

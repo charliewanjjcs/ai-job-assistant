@@ -58,10 +58,14 @@ def render() -> None:
 
     with st.container():
         st.header("职位描述 JD")
-        st.text_area(
-            "JD 原文（粘贴）", key="jd_text", height=160, on_change=on_jd_text_change,
-            placeholder="把招聘网页上的 JD 文本粘贴到这里（第三步将支持直接填 URL）",
-        )
+        col_text, col_btn = st.columns([4, 1], vertical_alignment="bottom")
+        with col_text:
+            st.text_area(
+                "JD 原文（粘贴）", key="jd_text", height=100, on_change=on_jd_text_change,
+                placeholder="把招聘网页上的 JD 文本粘贴到这里，粘贴后按 Ctrl+Enter 或点「确认」",
+            )
+        with col_btn:
+            st.button("确认", key="jd_confirm", on_click=on_jd_text_change, use_container_width=True)
         st.text_input("岗位标题", key="jd_title")
         st.text_input("公司", key="jd_company")
         st.text_input("城市", key="jd_city")
