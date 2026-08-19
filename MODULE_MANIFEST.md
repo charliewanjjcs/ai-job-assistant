@@ -32,7 +32,18 @@
 | URL 读取 JD | `modules/jd_url/` | `JdSource` | planned | — |
 | 外部薪资 API | `modules/salary_api/` | `SalaryProvider` | planned | — |
 
-## app/（Streamlit 前端）
-| 模块 | 路径 | 状态 | 锁定 |
-|------|------|------|------|
-| 入口/表单/展示 | `app/main.py` | locked(演进)：薪资改时薪/月薪/年薪+币种选择（**年薪单位改为「元」**）；新增语言(语言+3档熟练度)、到岗时间(手动)；目标岗位→理想工作(手动，**标签去掉"（手动填写，不读简历）"**)；**JD 原文粘贴框位于「岗位标题」之上**，on_change 回调回填「必需/加分技能/语言/到岗」输入框；新增「语言匹配」「到岗匹配」标签页；预期薪资左(计薪方式)/中(纯数字)/右(币种)三栏；**计薪方式/币种/到岗 selectbox 不加 help（selectbox 本就只可选不可编辑）**；**到岗冗余"可到岗时间"标签删除**；**语言能力区初始仅显示「+ 添加语言」按钮**；**JD 语言要求大标题改为"语言要求"**；性格框提示移入 placeholder 并去掉"取简历原话"；语言区删冗余"已掌握语言"副标题；必需技能原名"必选技能"；**技能三处标签去掉"（逗号分隔）"，改用 split_skills**；**技能抽取按同义/上下位族去重(extract_skills 调用 _dedupe_by_family)**；**词库补充 communication/interpersonal skills/人际交往能力 等软技能（识别非连续的 "communication and interpersonal skills" 写法）**；修复 availability="未填写" 构造枚举崩溃 | skill-vocab-soft-locked |
+## app/（Streamlit 前端：多页面 + 本地账户 + SQLite 持久化）
+| 模块 | 路径 | 公开接口 | 状态 | 锁定 |
+|------|------|----------|------|------|
+| 导航外壳 | `app/main.py` | 顶层 `import streamlit as st`；re-export `build_profile`/`build_jd`/`on_jd_text_change`（保 59 测试契约）；`__main__` 内 `st.navigation([st.Page(profile), st.Page(job_analysis)])` | active | — |
+| 数据层纯函数 | `app/state.py` | `build_profile() -> UserProfile`、`build_jd() -> JdInfo`、`on_jd_text_change()`、`DemoLLM` + 选项常量 | active | — |
+| 存储层 | `app/storage.py` | SQLite（`users`/`profiles`/`skill_library`/`verification_codes`）：`init_db`/`set_db_path`/`get_db_path`/`get_user`/`get_user_by_provider`/`get_user_by_email`/`get_or_create_user`/`create_email_user`/`authenticate_email`/`load_profile`/`save_profile`/`list_skills`/`add_skill`/`remove_skill`/`is_custom_skill`/`save_verification_code`/`verify_code` | active | — |
+| 登录态 | `app/auth.py` | `current_user_id`/`current_display`/`is_logged_in`/`require_login`/`logout`/`login_provider`/`login_email`/`register_email`/`send_phone_code`/`login_phone`/`persist_login`/`try_restore_login`（本地模拟账户：微信/QQ/谷歌/手机号/邮箱；邮箱密码哈希；验证码存 DB+TTL；`data/session.json` 保持登录） | active | — |
+| 技能编辑器 | `app/components/skill_editor.py` | `suggest_skills(query, vocab, existing, limit)` + `skill_editor(user_id)`（Workday 式联想→点选→标签可删→回车自定义，复用 `core.parsers` 词库） | active | — |
+| 语言管理 | `app/components/lang_manager.py` | `lang_manager(state_key, header)`（初始仅「+ 添加语言」） | active | — |
+| 结果标签页 | `app/components/result_tabs.py` | `render_salary`/`render_skill`/`render_language`/`render_availability`/`render_improve`/`render_career`/`render_daily`/`render_interview`/`render_report` | active | — |
+| 登录侧边栏 | `app/components/auth_sidebar.py` | `render_auth_sidebar()`（未登录「登录」按钮→弹层各 provider；登录后用户名+退出） | active | — |
+| 个人资料页 | `app/pages/profile.py` | `render()`（DB→session_state、技能编辑器、语言、薪资、性格、保存） | active | — |
+| 职位分析页 | `app/pages/job_analysis.py` | `render()`（require_login + 自动载候选人资料 + JD 粘贴 on_change 回填 + 分析） | active | — |
+
+> **UI 产品决策（沿用 skill-vocab-soft-locked 及之前锁定）**：薪资左计薪方式/中纯数字/右币种三栏（年薪单位「元」）；JD 原文粘贴框位于岗位标题之上，on_change 回填必需/加分技能、语言、到岗；计薪方式/币种/到岗 selectbox 仅可选不可编辑；语言区初始仅「+ 添加语言」按钮；JD 语言要求标题「语言要求」；性格提示在 placeholder；技能按同义/上下位族去重（`split_skills`，不加逗号分隔标签）；词库含 communication/interpersonal/人际交往 等软技能。
