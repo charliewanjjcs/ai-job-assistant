@@ -63,6 +63,7 @@ SKILL_VOCAB: List[str] = [
     "计算机视觉", "大模型", "LLM", "Prompt",
     # 办公 / 分析软件（用户点名：MS Office、Excel、PowerPoint、Power BI 等）
     "MS Office", "Office", "Excel", "PowerPoint", "PPT", "Word",
+    "Chinese word processing", "中文文字处理", "中文打字",
     "Outlook", "Visio", "WPS", "Access", "Tableau", "Power BI", "PowerBI", "BI",
     "SAP", "Salesforce", "ERP", "CRM",
     # 设计 / 产品 / 运营工具
