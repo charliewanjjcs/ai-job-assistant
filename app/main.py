@@ -38,16 +38,18 @@ from app.state import (  # noqa: E402
     on_jd_text_change,
 )
 import app.auth as auth  # noqa: E402
+import app.storage as storage  # noqa: E402
 from app.pages import job_analysis as job_analysis_page  # noqa: E402
 from app.pages import profile as profile_page  # noqa: E402
 
 
 def run_app() -> None:
+    storage.init_db()  # 首次运行即建表（幂等），否则登录会报 no such table
     st.set_page_config(page_title="AI 求职助手", layout="wide")
     auth.try_restore_login()  # 决策 #3：重启后自动恢复登录态
     pg = st.navigation([
-        st.Page(profile_page.render, title="个人资料", icon="🧑", default=True),
-        st.Page(job_analysis_page.render, title="职位分析", icon="🔍"),
+        st.Page(profile_page.render, title="个人资料", icon="🧑", url_path="profile", default=True),
+        st.Page(job_analysis_page.render, title="职位分析", icon="🔍", url_path="job-analysis"),
     ])
     pg.run()
 
