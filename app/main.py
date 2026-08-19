@@ -5,6 +5,7 @@
 """
 import os
 import sys
+import uuid
 
 # 确保项目根在 sys.path，便于 import core
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -41,7 +42,7 @@ PERIOD_LABELS = ["年薪", "月薪", "时薪"]
 PERIOD_VALUES = {"年薪": "annual", "月薪": "monthly", "时薪": "hourly"}
 CURRENCY_LABELS = ["¥ 人民币 (CNY)", "HK$ 港币 (HKD)"]
 CURRENCY_VALUES = {"¥ 人民币 (CNY)": "CNY", "HK$ 港币 (HKD)": "HKD"}
-EXP_LABELS = {"年薪": "预期年薪（万元）", "月薪": "预期月薪（元）", "时薪": "预期时薪（元）"}
+EXP_LABELS = {"年薪": "预期年薪（元）", "月薪": "预期月薪（元）", "时薪": "预期时薪（元）"}
 
 
 class DemoLLM:
@@ -72,30 +73,62 @@ def _idx(options, value):
         return 0
 
 
-def _lang_manager(state_key: str, header: str):
-    """语言 + 熟练度 增删管理器（添加/移除式，避免动态索引编辑的坑）。"""
+def _lang_manager(state_key: str, header: str = ""):
+    """语言 + 熟练度 管理器。
+
+    初始状态只显示「+ 添加语言」按钮；点击后新增一栏「语言 + 熟练度」选择框（可随手改、可删除）。
+    每个条目带稳定 id，避免删除后索引错位。
+    """
     if header:
         st.markdown(f"**{header}**")
-    items = st.session_state.get(state_key, [])
-    if items:
-        for i, it in enumerate(items):
-            c1, c2, c3 = st.columns([2, 1, 0.8])
-            c1.write(it["language"])
-            c2.write(it["level"])
-            if c3.button("移除", key=f"{state_key}_rm_{i}"):
-                items.pop(i)
-                st.session_state[state_key] = items
-                st.rerun()
-    else:
-        st.caption("尚未添加")
-    a, b, c = st.columns([2, 1, 0.8])
-    lang = a.selectbox("语言", LANG_OPTIONS, key=f"{state_key}_add_lang", label_visibility="collapsed")
-    lvl = b.selectbox("熟练度", LEVEL_OPTIONS, key=f"{state_key}_add_lvl", label_visibility="collapsed")
-    if c.button("添加", key=f"{state_key}_add_btn"):
-        items.append({"language": lang, "level": lvl})
+    items = st.session_state.setdefault(state_key, [])
+    # 兼容 JD 自动识别回填的无 id 旧条目：补齐稳定 id
+    for it in items:
+        if "id" not in it:
+            it["id"] = str(uuid.uuid4())
+    # 渲染已有条目（可编辑）
+    for it in items:
+        rid = it["id"]
+        c1, c2, c3 = st.columns([2, 1, 0.8])
+        lang = c1.selectbox(
+            "语言", LANG_OPTIONS,
+            index=_idx(LANG_OPTIONS, it.get("language", "")),
+            key=f"{state_key}_lang_{rid}", label_visibility="collapsed",
+        )
+        lvl = c2.selectbox(
+            "熟练度", LEVEL_OPTIONS,
+            index=_idx(LEVEL_OPTIONS, it.get("level", "")),
+            key=f"{state_key}_lvl_{rid}", label_visibility="collapsed",
+        )
+        it["language"] = lang
+        it["level"] = lvl
+        if c3.button("×", key=f"{state_key}_del_{rid}"):
+            st.session_state[state_key] = [x for x in items if x["id"] != rid]
+            st.rerun()
+    # 添加按钮（初始即显示；空列表时也只显示它）
+    if st.button("+ 添加语言", key=f"{state_key}_add_btn"):
+        items.append({"id": str(uuid.uuid4()), "language": LANG_OPTIONS[0], "level": LEVEL_OPTIONS[1]})
         st.session_state[state_key] = items
         st.rerun()
-    return st.session_state.get(state_key, [])
+
+
+def on_jd_text_change():
+    """JD 原文变化时的回调：解析并回填必需/加分技能、语言要求、到岗偏好。
+
+    用 on_change 回调写入 session_state，可避免「widget 已实例化后又直接赋值」导致的
+    StreamlitAPIException（st.session_state.jd_req 不可在 widget 实例化后修改）。
+    """
+    jd_text = st.session_state.get("jd_text", "")
+    if not jd_text:
+        return
+    pjd = parse_jd_text(jd_text)
+    st.session_state["jd_lang_list"] = [
+        {"id": str(uuid.uuid4()), "language": l.language, "level": l.level.value}
+        for l in pjd["required_languages"]
+    ]
+    st.session_state["jd_prefers_immediate"] = pjd["prefers_immediate"]
+    st.session_state["jd_req"] = ", ".join(pjd["required_skills"])
+    st.session_state["jd_pref"] = ", ".join(pjd["preferred_skills"])
 
 
 def build_profile():
@@ -115,7 +148,7 @@ def build_profile():
     value = st.session_state.get("exp_value", 0.0)
     expected = None
     if value and value > 0:
-        v = float(value) * 10000.0 if period == "annual" else float(value)
+        v = float(value)
         expected = SalaryAmount(value=v, currency=Currency(currency), period=PayPeriod(period))
     else:
         pexp = parsed.get("expected_salary")
@@ -127,7 +160,7 @@ def build_profile():
         for e in st.session_state.get("lang_list", [])
     ]
     av = st.session_state.get("availability")
-    availability = Availability(av) if av else None
+    availability = Availability(av) if av and av != "未填写" else None
 
     return UserProfile(
         raw_resume=resume or None,
@@ -291,9 +324,7 @@ def main():
                             st.session_state["exp_period_label"] = {
                                 "annual": "年薪", "monthly": "月薪", "hourly": "时薪"
                             }.get(es.period.value, "年薪")
-                            st.session_state["exp_value"] = (
-                                round(es.value / 10000.0, 1) if es.period.value == "annual" else es.value
-                            )
+                            st.session_state["exp_value"] = es.value
                             st.session_state["exp_currency_label"] = {
                                 "CNY": "¥ 人民币 (CNY)", "HKD": "HK$ 港币 (HKD)"
                             }.get(es.currency.value, "¥ 人民币 (CNY)")
@@ -315,9 +346,9 @@ def main():
         # 预期薪资：左=计薪方式，中=纯数字金额，右=币种（手动填充；PDF 解析可自动带出）
         st.markdown("**预期薪资**")
         ecol1, ecol2, ecol3 = st.columns(3)
-        period_label = ecol1.selectbox("计薪方式", PERIOD_LABELS, key="exp_period_label")
+        period_label = ecol1.selectbox("计薪方式", PERIOD_LABELS, key="exp_period_label", help="下拉选择，不可自由输入")
         ecol2.number_input(EXP_LABELS[period_label], key="exp_value", min_value=0.0, step=1.0)
-        ecol3.selectbox("币种", CURRENCY_LABELS, key="exp_currency_label")
+        ecol3.selectbox("币种", CURRENCY_LABELS, key="exp_currency_label", help="下拉选择，不可自由输入")
 
         # 语言（手动选择：语言 + 熟练度 3 档）
         st.markdown("**语言能力（手动选择，用于匹配 JD 语言要求）**")
@@ -326,9 +357,11 @@ def main():
         # 到岗时间（手动选择）
         st.markdown("**到岗时间（手动选择）**")
         st.selectbox(
-            "可到岗时间",
+            "到岗时间",
             ["未填写"] + AVAIL_OPTIONS,
             key="availability",
+            label_visibility="collapsed",
+            help="下拉选择，不可自由输入",
         )
 
     with c2:
@@ -338,24 +371,12 @@ def main():
         st.text_input("城市", key="jd_city")
         st.text_input("必需技能（逗号分隔）", key="jd_req", placeholder="Python, Go, MySQL")
         st.text_input("加分技能（逗号分隔）", key="jd_pref", placeholder="Docker, K8s")
-        st.text_area("JD 原文（粘贴）", key="jd_text", height=160,
-                     placeholder="把招聘网页上的 JD 文本粘贴到这里（第三步将支持直接填 URL）")
+        st.text_area(
+            "JD 原文（粘贴）", key="jd_text", height=160, on_change=on_jd_text_change,
+            placeholder="把招聘网页上的 JD 文本粘贴到这里（第三步将支持直接填 URL）",
+        )
 
-        # JD 语言要求（自动识别 + 手动增删）
-        jd_text = st.session_state.get("jd_text", "")
-        if jd_text:
-            sig = f"jd:{len(jd_text)}:{hash(jd_text)}"
-            if st.session_state.get("_jd_last") != sig:
-                st.session_state["_jd_last"] = sig
-                pjd = parse_jd_text(jd_text)
-                st.session_state["jd_lang_list"] = [
-                    {"language": l.language, "level": l.level.value} for l in pjd["required_languages"]
-                ]
-                st.session_state["jd_prefers_immediate"] = pjd["prefers_immediate"]
-                # 自动把识别出的必需/加分技能回填到技能输入框，便于用户查看与微调
-                st.session_state["jd_req"] = ", ".join(pjd["required_skills"])
-                st.session_state["jd_pref"] = ", ".join(pjd["preferred_skills"])
-                st.rerun()
+        # JD 语言要求（自动识别 + 手动增删）：JD 原文变化时由 on_jd_text_change 回调回填技能/语言/到岗
         st.markdown("**JD 语言要求（自动识别 + 可增删）**")
         _lang_manager("jd_lang_list", "JD 要求的语言")
         st.checkbox("JD 偏好「尽快到岗 / Immediate available」", key="jd_prefers_immediate")
