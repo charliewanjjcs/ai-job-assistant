@@ -36,6 +36,20 @@ def test_extract_skills_empty():
     assert extract_skills("") == []
 
 
+def test_extract_skills_family_dedupe():
+    # 同义/上下位表述只保留一条，避免重复展示
+    # 1) detail-oriented 与 attention to detail 同族 -> 仅一条
+    assert extract_skills("Detail-oriented with strong attention to detail.") == ["attention to detail"]
+    # 2) 仅出现 detail-oriented 时，原样保留，不冒出 attention to detail
+    assert extract_skills("I am detail-oriented and a team player.") == ["detail-oriented"]
+    # 3) MS Office ⊇ Excel 同族 -> 仅保留 MS Office
+    assert extract_skills("I have MS Office and Excel skills.") == ["MS Office"]
+    # 4) 不同族（问题解决 / 细致）各自保留
+    out = extract_skills("attention to detail and problem solving skills")
+    assert "attention to detail" in out and "problem solving skills" in out
+    assert len(out) == 2
+
+
 def test_extract_expected_salary_wan():
     assert extract_expected_salary("预期年薪：35 万") == 350000.0
     assert extract_expected_salary("无薪资信息") is None
@@ -107,13 +121,14 @@ def test_extract_skills_no_raw_section_grab():
 
 
 def test_extract_skills_office_tools():
-    # 用户点名的办公/分析工具应被识别
+    # 用户点名的办公/分析工具应被识别；MS Office/Excel/PowerPoint 同属一族，只保留代表性的一条
     t = "熟练使用 MS Office、Excel 与 data analysis，常用 PowerPoint 做汇报"
     skills = extract_skills(t)
-    assert "MS Office" in skills
-    assert "Excel" in skills
-    assert "data analysis" in skills
-    assert "PowerPoint" in skills
+    assert "MS Office" in skills            # 保留宽泛表述
+    assert "data analysis" in skills        # 独立技能族，保留
+    assert "Excel" not in skills            # 已被 MS Office 族去重折叠
+    assert "PowerPoint" not in skills       # 同上
+    assert len(skills) == 2
 
 
 def test_extract_skills_cjk_adjacent():

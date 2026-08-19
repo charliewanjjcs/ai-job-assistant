@@ -19,22 +19,7 @@ from .models import (
     SkillMatchResult,
     UserProfile,
 )
-from .parsers import SKILL_SUPERSETS, SKILL_SYNONYMS, normalize_skill
-
-
-def _skill_family(req: str) -> set:
-    """返回与 req 等价的所有规范化技能键（同义族 + 上下位族）。"""
-    rn = normalize_skill(req)
-    fam = {rn}
-    for canon, aliases in SKILL_SYNONYMS.items():
-        grp = {normalize_skill(canon)} | {normalize_skill(a) for a in aliases}
-        if rn in grp:
-            fam |= grp
-    for sup, comps in SKILL_SUPERSETS.items():
-        grp = {normalize_skill(sup)} | {normalize_skill(c) for c in comps}
-        if rn in grp:
-            fam |= grp
-    return fam
+from .parsers import SKILL_SUPERSETS, SKILL_SYNONYMS, _skill_family, normalize_skill
 
 
 def skill_equivalent(req: str, user_skill: str) -> bool:

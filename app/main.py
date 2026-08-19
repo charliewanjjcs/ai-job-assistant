@@ -334,7 +334,7 @@ def main():
 
         st.text_area("简历文本（粘贴）", key="resume", height=140)
         st.text_area(
-            "理想工作（手动填写，不读简历）",
+            "理想工作",
             key="ideal_job", height=70,
             placeholder="例：想要稳定、不追求高薪；或想赚得多愿意拼搏；或喜欢坐办公室/户外；"
                         "或需要常与人沟通；或一直对着电脑数据。",

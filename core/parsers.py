@@ -148,6 +148,42 @@ def normalize_skill(s: str) -> str:
     return re.sub(r"[^a-z0-9\u4e00-\u9fff]", "", s.lower())
 
 
+def _skill_family(req: str) -> set:
+    """返回与 req 等价的所有规范化技能键（同义族 + 上下位族）。
+
+    用于抽取/匹配时把「字面不同但同义 / 上下位」的技能视为同一概念，
+    例如 detail-oriented 与 attention to detail、Excel 与 MS Office 同属一族。
+    """
+    rn = normalize_skill(req)
+    fam = {rn}
+    for canon, aliases in SKILL_SYNONYMS.items():
+        grp = {normalize_skill(canon)} | {normalize_skill(a) for a in aliases}
+        if rn in grp:
+            fam |= grp
+    for sup, comps in SKILL_SUPERSETS.items():
+        grp = {normalize_skill(sup)} | {normalize_skill(c) for c in comps}
+        if rn in grp:
+            fam |= grp
+    return fam
+
+
+def _dedupe_by_family(found: List[str]) -> List[str]:
+    """去掉与已保留技能「同属一族」的后续词条，避免把同义/上下位表述重复展示。
+
+    保留每个族中**最先出现**的那一条（即简历中先出现的字面表述），
+    既消除重复，又尽量保留用户简历里原本的写法（不翻译、不双语）。
+    """
+    seen: set = set()
+    out: List[str] = []
+    for s in found:
+        sig = frozenset(_skill_family(s))
+        if sig in seen:
+            continue
+        seen.add(sig)
+        out.append(s)
+    return out
+
+
 def split_skills(text: str) -> List[str]:
     """把用户手动输入的技能文本拆成列表。
 
@@ -197,7 +233,7 @@ def extract_skills(text: str) -> List[str]:
     for s in SKILL_VOCAB + SOFT_SKILL_VOCAB:
         if s not in found and _token_present(text, s):
             found.append(s)
-    return _dedupe_subsumed(found)
+    return _dedupe_by_family(_dedupe_subsumed(found))
 
 
 # 城市词表（用于抽取工作城市）
