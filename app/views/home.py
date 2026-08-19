@@ -17,8 +17,8 @@ import streamlit as st
 import app.auth as auth
 import app.storage as storage
 from app.components.login_form import render_login_form
-from app.pages import job_analysis as job_analysis_page
-from app.pages import profile as profile_page
+from app.views import job_analysis as job_analysis_page
+from app.views import profile as profile_page
 
 
 @st.dialog("登录 / 注册")

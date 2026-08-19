@@ -36,7 +36,7 @@
 | 模块 | 路径 | 公开接口 | 状态 | 锁定 |
 |------|------|----------|------|------|
 | 导航外壳 | `app/main.py` | 顶层 `import streamlit as st`；re-export `build_profile`/`build_jd`/`on_jd_text_change`（保 59 测试契约）；`run_app` 内 `storage.init_db()` + `try_restore_login()` + 侧边栏手动渲染（登录区→`st.page_link` 导航→演示模式）+ `st.navigation(position="hidden")` 三页 | active | — |
-| 首页 | `app/pages/home.py` | `render()`（产品名+简介+3步流程+背景+居中双按钮）；`@st.dialog` 登录/提示弹窗；未登录弹登录、未完善资料弹提示、就绪 `st.switch_page(st.Page(...))` | active | — |
+| 首页 | `app/views/home.py` | `render()`（产品名+简介+3步流程+背景+居中双按钮）；`@st.dialog` 登录/提示弹窗；未登录弹登录、未完善资料弹提示、就绪 `st.switch_page(st.Page(...))` | active | — |
 | 登录表单 | `app/components/login_form.py` | `render_login_form(prefix)`（微信/QQ/谷歌/手机/邮箱，prefix 区分挂载点 key），供 sidebar popover 与首页 dialog 复用 | active | — |
 | 数据层纯函数 | `app/state.py` | `build_profile() -> UserProfile`、`build_jd() -> JdInfo`、`on_jd_text_change()`、`DemoLLM` + 选项常量 | active | — |
 | 存储层 | `app/storage.py` | SQLite（`users`/`profiles`/`skill_library`/`verification_codes`）：`init_db`/`set_db_path`/`get_db_path`/`get_user`/`get_user_by_provider`/`get_user_by_email`/`get_or_create_user`/`create_email_user`/`authenticate_email`/`load_profile`/`save_profile`/`has_profile_data`/`list_skills`/`add_skill`/`remove_skill`/`is_custom_skill`/`save_verification_code`/`verify_code` | active | — |
@@ -45,8 +45,8 @@
 | 语言管理 | `app/components/lang_manager.py` | `lang_manager(state_key, header)`（初始仅「+ 添加语言」） | active | — |
 | 结果标签页 | `app/components/result_tabs.py` | `render_salary`/`render_skill`/`render_language`/`render_availability`/`render_improve`/`render_career`/`render_daily`/`render_interview`/`render_report` | active | — |
 | 登录侧边栏 | `app/components/auth_sidebar.py` | `render_auth_sidebar()`（在 `st.sidebar` 上下文内、导航链接之前调用，渲染登录/退出区） | active | — |
-| 个人资料页 | `app/pages/profile.py` | `render()`（DB→session_state、技能编辑器、语言、薪资、性格、保存；上传 PDF 写 `tempfile.mkstemp` 唯一临时文件） | active | — |
-| 职位分析页 | `app/pages/job_analysis.py` | `render()`（require_login + 自动载候选人资料 + JD 粘贴 on_change 回填 + 分析） | active | — |
+| 个人资料页 | `app/views/profile.py` | `render()`（DB→session_state、技能编辑器、语言、薪资、性格、保存；上传 PDF 写 `tempfile.mkstemp` 唯一临时文件） | active | — |
+| 职位分析页 | `app/views/job_analysis.py` | `render()`（require_login + 自动载候选人资料 + JD 粘贴 on_change 回填 + 分析） | active | — |
 
 > **UI 产品决策（沿用 skill-vocab-soft-locked 及之前锁定）**：薪资左计薪方式/中纯数字/右币种三栏（年薪单位「元」）；JD 原文粘贴框位于岗位标题之上，on_change 回填必需/加分技能、语言、到岗；计薪方式/币种/到岗 selectbox 仅可选不可编辑；语言区初始仅「+ 添加语言」按钮；JD 语言要求标题「语言要求」；性格提示在 placeholder；技能按同义/上下位族去重（`split_skills`，不加逗号分隔标签）；词库含 communication/interpersonal/人际交往 等软技能。
 > **页面结构（本轮）**：登录区置于侧边栏「首页/个人资料/职位分析」链接之上（`position="hidden"`+手动 `st.page_link`）；首页为默认页，提供「完善个人资料」「开始职位分析」入口，未登录弹登录 dialog、未完善资料弹提示 dialog。

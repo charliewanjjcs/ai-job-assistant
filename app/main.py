@@ -1,7 +1,7 @@
 """AI 求职助手 —— Streamlit 前端入口（导航外壳）。
 
 - 左侧控制栏：登录/注册（弹层）+ 演示模式开关，置于导航链接之上（run_app 内 render_auth_sidebar）。
-- 三个页面：「首页」「个人资料」「职位分析」（app/pages/*）。职位分析自动复用个人资料。
+- 三个页面：「首页」「个人资料」「职位分析」（app/views/*）。职位分析自动复用个人资料。
 - 数据层在 app/state.py；持久化在 app/storage.py；登录态在 app/auth.py。
 
 为保证 tests/test_app_logic.py（monkeypatch m.st.session_state）不破，本模块顶层保留
@@ -40,9 +40,9 @@ from app.state import (  # noqa: E402
 import app.auth as auth  # noqa: E402
 import app.storage as storage  # noqa: E402
 from app.components.auth_sidebar import render_auth_sidebar  # noqa: E402
-from app.pages import home as home_page  # noqa: E402
-from app.pages import job_analysis as job_analysis_page  # noqa: E402
-from app.pages import profile as profile_page  # noqa: E402
+from app.views import home as home_page  # noqa: E402
+from app.views import job_analysis as job_analysis_page  # noqa: E402
+from app.views import profile as profile_page  # noqa: E402
 
 
 def run_app() -> None:
