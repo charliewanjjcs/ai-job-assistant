@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import os
 import sys
+import tempfile
 
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 if ROOT not in sys.path:
@@ -16,7 +17,6 @@ import streamlit as st
 
 import app.auth as auth
 import app.storage as storage
-from app.components.auth_sidebar import render_auth_sidebar
 from app.components.lang_manager import lang_manager
 from app.components.skill_editor import skill_editor
 from app.state import AVAIL_OPTIONS, CURRENCY_LABELS, EXP_LABELS, PERIOD_LABELS
@@ -57,8 +57,6 @@ def _save_profile(uid: int) -> None:
 
 
 def render() -> None:
-    render_auth_sidebar()
-
     if not auth.is_logged_in():
         st.info("请先在左侧登录 / 注册后再编辑个人资料。")
         return
@@ -78,18 +76,17 @@ def render() -> None:
         sig = f"{uploaded.name}:{uploaded.size}"
         if st.session_state.get("_pdf_last") != sig:  # 仅处理新上传，避免覆盖手动编辑
             st.session_state["_pdf_last"] = sig
-            up_dir = os.path.join(ROOT, "sandbox", "uploads")
-            os.makedirs(up_dir, exist_ok=True)
-            up_path = os.path.join(up_dir, uploaded.name)
-            with open(up_path, "wb") as f:
-                f.write(uploaded.getbuffer())
+            # 写到系统临时目录（唯一文件名），避免同名覆盖被占用锁定 / 项目目录权限问题
+            tmp_fd, tmp_path = tempfile.mkstemp(suffix=".pdf")
             try:
+                with os.fdopen(tmp_fd, "wb") as f:
+                    f.write(uploaded.getbuffer())
                 parser = PdfResumeParser()
-                text = parser.extract_text(up_path)
+                text = parser.extract_text(tmp_path)
                 if not text:
                     st.warning("该 PDF 无文字层（可能是扫描件），请改用下方文本粘贴。")
                 else:
-                    prof = parser.parse(up_path)
+                    prof = parser.parse(tmp_path)
                     if prof.raw_resume:
                         st.session_state["resume"] = prof.raw_resume
                     if prof.personality:
@@ -111,6 +108,11 @@ def render() -> None:
                     st.success("已从 PDF 提取并填充字段，可手动调整。")
             except Exception as e:
                 st.error(f"PDF 解析失败：{e}")
+            finally:
+                try:
+                    os.remove(tmp_path)
+                except OSError:
+                    pass
 
     st.text_area("简历文本（粘贴）", key="resume", height=140)
     st.text_area(

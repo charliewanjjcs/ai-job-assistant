@@ -241,6 +241,14 @@ def load_profile(user_id: int) -> dict | None:
         conn.close()
 
 
+def has_profile_data(user_id: int) -> bool:
+    """判断用户是否已完善个人资料（保存过简历/理想工作，或已添加技能）。"""
+    p = load_profile(user_id)
+    if p and (p.get("resume") or p.get("ideal_job")):
+        return True
+    return bool(list_skills(user_id))
+
+
 def save_profile(user_id: int, fields: dict) -> None:
     """upsert 候选人资料（不含 skills）。
 

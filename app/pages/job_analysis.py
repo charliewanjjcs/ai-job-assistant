@@ -16,7 +16,6 @@ import streamlit as st
 
 import app.auth as auth
 import app.storage as storage
-from app.components.auth_sidebar import render_auth_sidebar
 from app.components.lang_manager import lang_manager
 from app.components.result_tabs import render_report
 from app.state import DemoLLM, build_jd, build_profile, on_jd_text_change
@@ -44,8 +43,6 @@ def _load_candidate_to_session(uid: int) -> None:
 
 
 def render() -> None:
-    render_auth_sidebar()
-
     if not auth.is_logged_in():
         st.info("请先在左侧登录 / 注册后再进行职位分析。")
         return

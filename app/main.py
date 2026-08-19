@@ -1,7 +1,7 @@
 """AI 求职助手 —— Streamlit 前端入口（导航外壳）。
 
-- 左侧控制栏：登录/注册（弹层）+ 演示模式开关（由每个页面的 render_auth_sidebar 渲染）。
-- 两个页面：「个人资料」「职位分析」（app/pages/*）。职位分析自动复用个人资料。
+- 左侧控制栏：登录/注册（弹层）+ 演示模式开关，置于导航链接之上（run_app 内 render_auth_sidebar）。
+- 三个页面：「首页」「个人资料」「职位分析」（app/pages/*）。职位分析自动复用个人资料。
 - 数据层在 app/state.py；持久化在 app/storage.py；登录态在 app/auth.py。
 
 为保证 tests/test_app_logic.py（monkeypatch m.st.session_state）不破，本模块顶层保留
@@ -39,6 +39,8 @@ from app.state import (  # noqa: E402
 )
 import app.auth as auth  # noqa: E402
 import app.storage as storage  # noqa: E402
+from app.components.auth_sidebar import render_auth_sidebar  # noqa: E402
+from app.pages import home as home_page  # noqa: E402
 from app.pages import job_analysis as job_analysis_page  # noqa: E402
 from app.pages import profile as profile_page  # noqa: E402
 
@@ -47,10 +49,22 @@ def run_app() -> None:
     storage.init_db()  # 首次运行即建表（幂等），否则登录会报 no such table
     st.set_page_config(page_title="AI 求职助手", layout="wide")
     auth.try_restore_login()  # 决策 #3：重启后自动恢复登录态
+
+    # 侧边栏：登录区在上，导航链接在下（position="hidden" 下需手动渲染导航）
+    with st.sidebar:
+        render_auth_sidebar()
+        st.divider()
+        st.page_link(st.Page(home_page.render, url_path="home"), label="首页", icon="🏠")
+        st.page_link(st.Page(profile_page.render, url_path="profile"), label="个人资料", icon="🧑")
+        st.page_link(st.Page(job_analysis_page.render, url_path="job-analysis"), label="职位分析", icon="🔍")
+        st.divider()
+        st.checkbox("演示模式（无需 API Key）", value=True, key="demo")
+
     pg = st.navigation([
-        st.Page(profile_page.render, title="个人资料", icon="🧑", url_path="profile", default=True),
+        st.Page(home_page.render, title="首页", icon="🏠", url_path="home", default=True),
+        st.Page(profile_page.render, title="个人资料", icon="🧑", url_path="profile"),
         st.Page(job_analysis_page.render, title="职位分析", icon="🔍", url_path="job-analysis"),
-    ])
+    ], position="hidden")
     pg.run()
 
 

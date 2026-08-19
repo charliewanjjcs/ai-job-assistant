@@ -52,6 +52,8 @@ def require_login() -> int:
 def logout() -> None:
     st.session_state.pop("user_id", None)
     st.session_state.pop("user_display", None)
+    # 标记本次会话已主动退出：即使 session.json 因文件锁删除失败，也不在本会话自动恢复
+    st.session_state["_logged_out"] = True
     _clear_session_file()
 
 
@@ -128,7 +130,12 @@ def _clear_session_file() -> None:
         if os.path.exists(SESSION_FILE):
             os.remove(SESSION_FILE)
     except OSError:
-        pass
+        # 删除失败（Windows 下文件可能被短暂锁定）：退化为清空内容，避免下次被自动恢复
+        try:
+            with open(SESSION_FILE, "w", encoding="utf-8") as f:
+                json.dump({}, f)
+        except OSError:
+            pass
 
 
 def try_restore_login() -> None:
@@ -138,6 +145,8 @@ def try_restore_login() -> None:
     """
     if st.session_state.get("user_id"):
         return
+    if st.session_state.get("_logged_out"):
+        return  # 用户本次会话主动退出，不自动恢复
     if not os.path.exists(SESSION_FILE):
         return
     try:

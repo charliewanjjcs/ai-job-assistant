@@ -86,6 +86,26 @@ def test_profile_missing_returns_none(db):
     assert storage.load_profile(uid) is None
 
 
+def test_has_profile_data(db):
+    uid = storage.get_or_create_user("wechat", "wx-pd")
+    # 空用户：无资料无技能 → False
+    assert storage.has_profile_data(uid) is False
+    # 仅有性格/城市（无简历、无理想工作）→ 仍 False
+    storage.save_profile(uid, {"personality": "外向", "city": "深圳"})
+    assert storage.has_profile_data(uid) is False
+    # 有简历 → True
+    storage.save_profile(uid, {"resume": "Python 3 年"})
+    assert storage.has_profile_data(uid) is True
+    # 仅理想工作（无简历）→ True
+    uid2 = storage.get_or_create_user("wechat", "wx-pd2")
+    storage.save_profile(uid2, {"ideal_job": "稳定"})
+    assert storage.has_profile_data(uid2) is True
+    # 仅技能（无资料）→ True
+    uid3 = storage.get_or_create_user("wechat", "wx-pd3")
+    storage.add_skill(uid3, "Excel", is_custom=False)
+    assert storage.has_profile_data(uid3) is True
+
+
 def test_skill_library_add_list_remove(db):
     uid = storage.get_or_create_user("email", "u@e.com", email="u@e.com")
     assert storage.add_skill(uid, "Excel", is_custom=False) is True
