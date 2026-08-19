@@ -74,7 +74,8 @@ def _idx(options, value):
 
 def _lang_manager(state_key: str, header: str):
     """语言 + 熟练度 增删管理器（添加/移除式，避免动态索引编辑的坑）。"""
-    st.markdown(f"**{header}**")
+    if header:
+        st.markdown(f"**{header}**")
     items = st.session_state.get(state_key, [])
     if items:
         for i, it in enumerate(items):
@@ -184,7 +185,7 @@ def render_skill(r):
     sm = r.skill_match
     st.subheader(f"能力匹配度：{sm.match_score}/100")
     st.write(f"**已匹配：** {', '.join(sm.matched) or '无'}")
-    st.write(f"**缺失-必选：** {', '.join(sm.missing_required) or '无'}")
+    st.write(f"**缺失-必需：** {', '.join(sm.missing_required) or '无'}")
     st.write(f"**缺失-加分：** {', '.join(sm.missing_preferred) or '无'}")
 
 
@@ -308,7 +309,7 @@ def main():
                         "或需要常与人沟通；或一直对着电脑数据。",
         )
         st.text_input("掌握的技能（逗号分隔）", key="skills", placeholder="Python, MySQL, Redis")
-        st.text_input("性格描述（外向/内向、细心、抗压等）", key="personality", placeholder="外向、细心、抗压、沟通好")
+        st.text_input("性格描述", key="personality", placeholder="外向/内向、细心、抗压、沟通好等")
         st.text_input("期望工作城市", key="city")
 
         # 预期薪资：左=计薪方式，中=纯数字金额，右=币种（手动填充；PDF 解析可自动带出）
@@ -320,7 +321,7 @@ def main():
 
         # 语言（手动选择：语言 + 熟练度 3 档）
         st.markdown("**语言能力（手动选择，用于匹配 JD 语言要求）**")
-        _lang_manager("lang_list", "已掌握语言")
+        _lang_manager("lang_list", "")
 
         # 到岗时间（手动选择）
         st.markdown("**到岗时间（手动选择）**")
@@ -335,7 +336,7 @@ def main():
         st.text_input("岗位标题", key="jd_title")
         st.text_input("公司", key="jd_company")
         st.text_input("城市", key="jd_city")
-        st.text_input("必选技能（逗号分隔）", key="jd_req", placeholder="Python, Go, MySQL")
+        st.text_input("必需技能（逗号分隔）", key="jd_req", placeholder="Python, Go, MySQL")
         st.text_input("加分技能（逗号分隔）", key="jd_pref", placeholder="Docker, K8s")
         st.text_area("JD 原文（粘贴）", key="jd_text", height=160,
                      placeholder="把招聘网页上的 JD 文本粘贴到这里（第三步将支持直接填 URL）")
@@ -351,6 +352,10 @@ def main():
                     {"language": l.language, "level": l.level.value} for l in pjd["required_languages"]
                 ]
                 st.session_state["jd_prefers_immediate"] = pjd["prefers_immediate"]
+                # 自动把识别出的必需/加分技能回填到技能输入框，便于用户查看与微调
+                st.session_state["jd_req"] = ", ".join(pjd["required_skills"])
+                st.session_state["jd_pref"] = ", ".join(pjd["preferred_skills"])
+                st.rerun()
         st.markdown("**JD 语言要求（自动识别 + 可增删）**")
         _lang_manager("jd_lang_list", "JD 要求的语言")
         st.checkbox("JD 偏好「尽快到岗 / Immediate available」", key="jd_prefers_immediate")

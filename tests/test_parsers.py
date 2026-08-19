@@ -101,6 +101,31 @@ def test_extract_skills_office_tools():
     assert "PowerPoint" in skills
 
 
+def test_extract_skills_cjk_adjacent():
+    # 修复：英文技能紧贴中文（无空格）也应识别；且不能命中 Google/GitHub
+    t = "精通Python，熟悉MySQL、Redis，有Docker、Kubernetes经验者优先使用Git"
+    skills = extract_skills(t)
+    assert "Python" in skills
+    assert "MySQL" in skills
+    assert "Redis" in skills
+    assert "Docker" in skills
+    assert "Kubernetes" in skills
+    assert "Git" in skills
+    # 不应把长词误判
+    assert "Go" not in skills
+
+
+def test_parse_jd_single_block():
+    # 网页复制来的单段 JD（技能词紧贴中文）也应正确区分必需/加分
+    t = "任职要求：精通Python，熟悉MySQL、Redis，有Docker、Kubernetes经验者优先"
+    j = parse_jd_text(t)
+    assert "Python" in j["required_skills"]
+    assert "MySQL" in j["required_skills"]
+    assert "Redis" in j["required_skills"]
+    assert "Docker" in j["preferred_skills"]
+    assert "Kubernetes" in j["preferred_skills"]
+
+
 def test_extract_skills_bilingual_en():
     # 英文简历：命中英文词条，不输出中文翻译
     t = "Proficient in data analysis and communication skills, using Excel and MATLAB."

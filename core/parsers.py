@@ -30,14 +30,12 @@ from .models import (
 def _token_present(text: str, token: str) -> bool:
     """判断 token 是否作为「独立词」出现在 text 中（大小写不敏感）。
 
-    - 纯英文字母/数字词：用 \\b 单词边界，避免 'Go' 命中 'Google'、'Git' 命中 'GitHub'。
-    - 含特殊字符（. + # 等）或中文词：用「前后非字母数字」边界，避免嵌在更长单词里被误判。
+    以「非 ASCII 字母数字」为边界（中文也视为边界），因此：
+    - '精通Python'、'熟悉MySQL'、'Kubernetes经验' 都能正确命中（中文相邻即视为边界）；
+    - 不会把 'Python' 命中 'Pythonic'、'Git' 命中 'GitHub'（其后紧跟字母数字则不算边界）。
     """
     esc = re.escape(token)
-    if re.fullmatch(r"[A-Za-z0-9]+", token):
-        pat = r"\b" + esc + r"\b"
-    else:
-        pat = r"(?<![A-Za-z0-9])" + esc + r"(?![A-Za-z0-9])"
+    pat = r"(?<![A-Za-z0-9])" + esc + r"(?![A-Za-z0-9])"
     return re.search(pat, text, re.I) is not None
 
 
