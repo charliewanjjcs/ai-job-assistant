@@ -19,16 +19,42 @@ from .models import (
     SkillMatchResult,
     UserProfile,
 )
+from .parsers import SKILL_SUPERSETS, SKILL_SYNONYMS, normalize_skill
+
+
+def _skill_family(req: str) -> set:
+    """返回与 req 等价的所有规范化技能键（同义族 + 上下位族）。"""
+    rn = normalize_skill(req)
+    fam = {rn}
+    for canon, aliases in SKILL_SYNONYMS.items():
+        grp = {normalize_skill(canon)} | {normalize_skill(a) for a in aliases}
+        if rn in grp:
+            fam |= grp
+    for sup, comps in SKILL_SUPERSETS.items():
+        grp = {normalize_skill(sup)} | {normalize_skill(c) for c in comps}
+        if rn in grp:
+            fam |= grp
+    return fam
+
+
+def skill_equivalent(req: str, user_skill: str) -> bool:
+    """req 与 user_skill 是否「同一技能」：字面相等 / 子串包含 / 同义 / 上下位。"""
+    return normalize_skill(user_skill) in _skill_family(req)
 
 
 class SkillMatcher:
     @staticmethod
     def match(profile: UserProfile, jd: JdInfo) -> SkillMatchResult:
-        user_skills = [s.strip().lower() for s in (profile.skills or [])]
+        user_skills = [s.strip() for s in (profile.skills or [])]
 
         def hits(skill: str) -> bool:
             s = skill.strip().lower()
-            return any(s in u or u in s for u in user_skills)
+            us = [u.lower() for u in user_skills]
+            # 1) 直接相等 / 子串包含（兼容原有行为，如 'java' in 'javascript'）
+            if any(s == u or s in u or u in s for u in us):
+                return True
+            # 2) 同义族 / 上下位族（MS Office ⊇ Excel、detail-oriented ≈ attention to detail）
+            return any(skill_equivalent(skill, u) for u in user_skills)
 
         matched: List[str] = []
         missing_required: List[str] = []

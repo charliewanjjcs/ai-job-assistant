@@ -9,12 +9,27 @@ from core.parsers import (
     parse_expected_salary,
     parse_jd_text,
     parse_resume_text,
+    split_skills,
 )
 
 
 def test_extract_skills_hits_vocab():
     assert "Python" in extract_skills("技能：Python、MySQL、Redis")
     assert "Kubernetes" in extract_skills("熟悉 Kubernetes 者优先")
+
+
+def test_split_skills_multiple_delimiters():
+    # 逗号 / 中文逗号 / 顿号 / 分号 / 斜杠 / 换行 都应作为分隔符
+    assert split_skills("Python, MySQL、Redis；Excel/PPT\nDocker") == [
+        "Python", "MySQL", "Redis", "Excel", "PPT", "Docker"
+    ]
+    # 多词技能（含空格）不应被空格拆散
+    assert split_skills("data analysis, attention to detail") == [
+        "data analysis", "attention to detail"
+    ]
+    # 空串 / 全空 -> 空列表；首尾空白忽略；重复去重
+    assert split_skills("") == []
+    assert split_skills("  Excel ,, Excel ， Word ") == ["Excel", "Word"]
 
 
 def test_extract_skills_empty():

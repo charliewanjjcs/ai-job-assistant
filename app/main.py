@@ -30,7 +30,7 @@ from core.models import (
     SalaryAmount,
     UserProfile,
 )
-from core.parsers import parse_jd_text, parse_resume_text
+from core.parsers import parse_jd_text, parse_resume_text, split_skills
 from modules.resume_pdf.pdf_parser import PdfResumeParser
 
 # 选项常量
@@ -135,7 +135,7 @@ def build_profile():
     resume = st.session_state.get("resume", "")
     parsed = parse_resume_text(resume) if resume else {}
     skills_raw = st.session_state.get("skills", "")
-    skills = [s.strip() for s in skills_raw.split(",") if s.strip()] or (parsed.get("skills") or [])
+    skills = split_skills(skills_raw) or (parsed.get("skills") or [])
     personality = st.session_state.get("personality", "") or parsed.get("personality")
     ideal_job = st.session_state.get("ideal_job", "") or None
     city = st.session_state.get("city", "") or parsed.get("city")
@@ -181,9 +181,9 @@ def build_jd():
     company = st.session_state.get("jd_company", "") or parsed.get("company")
     city = st.session_state.get("jd_city", "") or parsed.get("city")
     req_raw = st.session_state.get("jd_req", "")
-    req = [s.strip() for s in req_raw.split(",") if s.strip()] or (parsed.get("required_skills") or [])
+    req = split_skills(req_raw) or (parsed.get("required_skills") or [])
     pref_raw = st.session_state.get("jd_pref", "")
-    pref = [s.strip() for s in pref_raw.split(",") if s.strip()] or (parsed.get("preferred_skills") or [])
+    pref = split_skills(pref_raw) or (parsed.get("preferred_skills") or [])
     jd_langs = [
         LanguageProficiency(language=e["language"], level=LanguageLevel(e["level"]))
         for e in st.session_state.get("jd_lang_list", [])
@@ -339,16 +339,16 @@ def main():
             placeholder="例：想要稳定、不追求高薪；或想赚得多愿意拼搏；或喜欢坐办公室/户外；"
                         "或需要常与人沟通；或一直对着电脑数据。",
         )
-        st.text_input("掌握的技能（逗号分隔）", key="skills", placeholder="Python, MySQL, Redis")
+        st.text_input("掌握的技能", key="skills", placeholder="Python, MySQL, Redis")
         st.text_input("性格描述", key="personality", placeholder="外向/内向、细心、抗压、沟通好等")
         st.text_input("期望工作城市", key="city")
 
         # 预期薪资：左=计薪方式，中=纯数字金额，右=币种（手动填充；PDF 解析可自动带出）
         st.markdown("**预期薪资**")
         ecol1, ecol2, ecol3 = st.columns(3)
-        period_label = ecol1.selectbox("计薪方式", PERIOD_LABELS, key="exp_period_label", help="下拉选择，不可自由输入")
+        period_label = ecol1.selectbox("计薪方式", PERIOD_LABELS, key="exp_period_label")
         ecol2.number_input(EXP_LABELS[period_label], key="exp_value", min_value=0.0, step=1.0)
-        ecol3.selectbox("币种", CURRENCY_LABELS, key="exp_currency_label", help="下拉选择，不可自由输入")
+        ecol3.selectbox("币种", CURRENCY_LABELS, key="exp_currency_label")
 
         # 语言（手动选择：语言 + 熟练度 3 档）
         st.markdown("**语言能力（手动选择，用于匹配 JD 语言要求）**")
@@ -361,7 +361,6 @@ def main():
             ["未填写"] + AVAIL_OPTIONS,
             key="availability",
             label_visibility="collapsed",
-            help="下拉选择，不可自由输入",
         )
 
     with c2:
@@ -369,8 +368,8 @@ def main():
         st.text_input("岗位标题", key="jd_title")
         st.text_input("公司", key="jd_company")
         st.text_input("城市", key="jd_city")
-        st.text_input("必需技能（逗号分隔）", key="jd_req", placeholder="Python, Go, MySQL")
-        st.text_input("加分技能（逗号分隔）", key="jd_pref", placeholder="Docker, K8s")
+        st.text_input("必需技能", key="jd_req", placeholder="Python, Go, MySQL")
+        st.text_input("加分技能", key="jd_pref", placeholder="Docker, K8s")
         st.text_area(
             "JD 原文（粘贴）", key="jd_text", height=160, on_change=on_jd_text_change,
             placeholder="把招聘网页上的 JD 文本粘贴到这里（第三步将支持直接填 URL）",
@@ -378,7 +377,7 @@ def main():
 
         # JD 语言要求（自动识别 + 手动增删）：JD 原文变化时由 on_jd_text_change 回调回填技能/语言/到岗
         st.markdown("**JD 语言要求（自动识别 + 可增删）**")
-        _lang_manager("jd_lang_list", "JD 要求的语言")
+        _lang_manager("jd_lang_list", "")
         st.checkbox("JD 偏好「尽快到岗 / Immediate available」", key="jd_prefers_immediate")
 
     if st.button("开始分析", type="primary"):

@@ -95,10 +95,77 @@ SOFT_SKILL_VOCAB: List[str] = [
     "运营策划", "内容运营", "社群运营",
     "业务分析", "business analysis", "财务分析", "financial analysis",
     "供应链管理", "供应商管理", "质量管控", "自动化测试", "性能优化",
-    "沟通能力", "communication skills",
-    "团队合作", "teamwork",
-    "领导力", "leadership",
+    "沟通能力", "communication skills", "沟通",
+    "团队合作", "teamwork", "协作", "collaboration",
+    "领导力", "leadership", "领导能力",
+    # 分析 / 解决问题类（用户点名：analytical and problem-solving skills；以及 attention to detail）
+    "分析能力", "analytical skills", "analytical",
+    "分析与解决问题", "analytical and problem-solving skills", "analytical and problem solving skills",
+    "解决问题", "problem solving", "problem-solving", "problem solving skills",
+    "注重细节", "attention to detail", "attention to details", "detail-oriented", "detail oriented",
+    "批判性思维", "critical thinking",
+    "创造力", "creativity", "创意",
+    "适应能力", "adaptability", "灵活性", "flexibility",
 ]
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 技能「族」：字面不同但意思相近 / 存在上下位关系，匹配时视为同一技能。
+# 用于 matcher：JD 要求 Excel 而用户写了 MS Office（上下位），或 JD 要求
+# attention to detail 而用户写了 detail-oriented（同义），都应判为匹配。
+# 规范键 = 转小写并去掉所有非「字母数字/汉字」字符，便于跨写法比对。
+# ─────────────────────────────────────────────────────────────────────────────
+SKILL_SYNONYMS: dict = {
+    "attention to detail": ["attention to details", "detail-oriented", "detail oriented",
+                            "注重细节", "细致", "细心"],
+    "problem solving": ["problem-solving", "problem solving skills", "problem-solving skills",
+                        "analytical skills", "analytical", "analytical and problem-solving skills",
+                        "analytical and problem solving skills", "解决问题", "分析与解决问题"],
+    "communication skills": ["communication", "communicate", "沟通能力", "沟通"],
+    "teamwork": ["team work", "team collaboration", "团队合作", "团队协作", "协作", "collaboration"],
+    "leadership": ["领导力", "领导能力", "lead"],
+    "time management": ["时间管理"],
+    "data analysis": ["data analytics", "数据分析"],
+    "project management": ["项目管理"],
+    "critical thinking": ["批判性思维", "批判性思考"],
+    "creativity": ["创造力", "创意"],
+}
+
+# 上下位：键为「更宽泛」的技能，值为其包含的具体组件。
+# 仅当「具体组件」作为 JD 要求、「宽泛技能」作为用户具备项（或反之）时，判为匹配。
+SKILL_SUPERSETS: dict = {
+    "MS Office": ["Office", "Excel", "Word", "PowerPoint", "PPT", "Outlook", "Visio", "WPS", "Access"],
+    "Office": ["Excel", "Word", "PowerPoint", "PPT", "Outlook", "Visio", "WPS", "Access"],
+    "Power BI": ["BI"],
+    "Adobe": ["Photoshop", "Illustrator"],
+    "云计算": ["AWS", "Azure", "阿里云", "腾讯云", "cloud computing"],
+    "cloud computing": ["AWS", "Azure", "阿里云", "腾讯云", "云计算"],
+}
+
+
+def normalize_skill(s: str) -> str:
+    """技能规范键：转小写并去除所有非「字母数字/汉字」字符。"""
+    return re.sub(r"[^a-z0-9\u4e00-\u9fff]", "", s.lower())
+
+
+def split_skills(text: str) -> List[str]:
+    """把用户手动输入的技能文本拆成列表。
+
+    支持逗号 / 中文逗号 / 分号 / 顿号 / 斜杠 / 换行 作为分隔符；
+    **不做空格切分**（避免把 'data analysis'、'attention to detail' 这类多词技能拆散）。
+    空项忽略，保序去重。
+    """
+    if not text:
+        return []
+    parts = re.split(r"[，,；;、/\\\n]+", text)
+    seen = set()
+    out: List[str] = []
+    for p in parts:
+        p = p.strip()
+        if p and p not in seen:
+            seen.add(p)
+            out.append(p)
+    return out
 
 
 def _dedupe_subsumed(found: List[str]) -> List[str]:

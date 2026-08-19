@@ -94,6 +94,47 @@ def test_language_match_no_requirement():
     assert r.match_score == 100.0
 
 
+def test_ms_office_covers_excel():
+    # JD 要求 Excel，用户写 MS Office（上下位）应判匹配，而非缺失
+    p = _profile(["MS Office", "Python"])
+    jd = _jd(["Excel"], [])
+    r = SkillMatcher.match(p, jd)
+    assert r.missing_required == []
+    assert r.match_score == 100.0
+
+
+def test_excel_does_not_falsely_cover_msoffice_as_missing():
+    # 反向：JD 要求 MS Office，用户仅 Excel —— 仍按同族判匹配（宽松，可接受）
+    p = _profile(["Excel"])
+    jd = _jd(["MS Office"], [])
+    r = SkillMatcher.match(p, jd)
+    assert r.missing_required == []
+
+
+def test_analytical_synonym_match():
+    # JD 要求 analytical and problem-solving skills，用户写 problem solving 应匹配
+    p = _profile(["problem solving", "Python"])
+    jd = _jd(["analytical and problem-solving skills"], [])
+    r = SkillMatcher.match(p, jd)
+    assert r.missing_required == []
+
+
+def test_attention_to_detail_synonym():
+    # JD 要求 attention to detail，用户写 detail-oriented 应匹配
+    p = _profile(["detail-oriented", "Excel"])
+    jd = _jd(["attention to detail"], [])
+    r = SkillMatcher.match(p, jd)
+    assert r.missing_required == []
+
+
+def test_plain_skill_still_extracted_and_matched():
+    # 软技能 analytical and problem-solving skills 应能被 extract_skills 识别
+    from core.parsers import extract_skills
+    found = extract_skills("具备 analytical and problem-solving skills 与 attention to detail")
+    assert "analytical and problem-solving skills" in found
+    assert "attention to detail" in found
+
+
 def test_availability_match():
     # JD 偏好尽快到岗，用户「立刻」-> 完全匹配
     jd = JdInfo(prefers_immediate=True)
