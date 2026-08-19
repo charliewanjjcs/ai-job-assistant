@@ -17,8 +17,8 @@ import streamlit as st
 import app.auth as auth
 import app.storage as storage
 from app.components.lang_manager import lang_manager
-from app.components.result_tabs import render_report
 from app.state import DemoLLM, build_jd, build_profile, on_jd_text_change
+from app.views import results as results_page
 from core.analyzer import CoreAnalyzer
 from core.llm import DeepSeekClient
 
@@ -88,4 +88,7 @@ def render() -> None:
         except RuntimeError as e:
             st.error(f"分析失败：{e}")
             return
-        render_report(report, demo)
+        # 持久化 + 跳转「分析结果」页并默认选中刚分析的记录
+        new_id = storage.save_analysis_result(uid, report, jd_text=jd.raw_text)
+        st.session_state["_pending_result_id"] = new_id
+        st.switch_page(st.Page(results_page.render, url_path="results"))

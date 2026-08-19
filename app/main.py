@@ -43,6 +43,7 @@ from app.components.auth_sidebar import render_auth_sidebar  # noqa: E402
 from app.views import home as home_page  # noqa: E402
 from app.views import job_analysis as job_analysis_page  # noqa: E402
 from app.views import profile as profile_page  # noqa: E402
+from app.views import results as results_page  # noqa: E402
 
 
 def run_app() -> None:
@@ -57,6 +58,7 @@ def run_app() -> None:
         st.page_link(st.Page(home_page.render, url_path="home"), label="首页", icon="🏠")
         st.page_link(st.Page(profile_page.render, url_path="profile"), label="个人资料", icon="🧑")
         st.page_link(st.Page(job_analysis_page.render, url_path="job-analysis"), label="职位分析", icon="🔍")
+        st.page_link(st.Page(results_page.render, url_path="results"), label="分析结果", icon="📄")
         st.divider()
         st.checkbox("演示模式（无需 API Key）", value=True, key="demo")
 
@@ -64,6 +66,7 @@ def run_app() -> None:
         st.Page(home_page.render, title="首页", icon="🏠", url_path="home", default=True),
         st.Page(profile_page.render, title="个人资料", icon="🧑", url_path="profile"),
         st.Page(job_analysis_page.render, title="职位分析", icon="🔍", url_path="job-analysis"),
+        st.Page(results_page.render, title="分析结果", icon="📄", url_path="results"),
     ], position="hidden")
     pg.run()
 
