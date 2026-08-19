@@ -78,10 +78,10 @@ def test_extract_skills_no_false_positive():
 
 
 def test_extract_skills_genuine_go_git():
-    # 真实出现时仍应命中（独立词）
+    # 真实出现时仍应命中（独立词；不再收录裸 Go，避免命中 go-to-market 等误判）
     t = "熟悉 Go 语言与 Git 版本控制"
     skills = extract_skills(t)
-    assert "Go" in skills
+    assert "Go 语言" in skills
     assert "Git" in skills
 
 
@@ -99,6 +99,50 @@ def test_extract_skills_office_tools():
     assert "Excel" in skills
     assert "data analysis" in skills
     assert "PowerPoint" in skills
+
+
+def test_extract_skills_bilingual_en():
+    # 英文简历：命中英文词条，不输出中文翻译
+    t = "Proficient in data analysis and communication skills, using Excel and MATLAB."
+    skills = extract_skills(t)
+    assert "data analysis" in skills
+    assert "communication skills" in skills
+    assert "Excel" in skills
+    assert "MATLAB" in skills
+    assert "数据分析" not in skills
+    assert "沟通能力" not in skills
+
+
+def test_extract_skills_bilingual_zh():
+    # 中文简历：命中中文词条，不输出英文
+    t = "熟练掌握数据分析与沟通能力，常用 Excel 与 MATLAB 做建模。"
+    skills = extract_skills(t)
+    assert "数据分析" in skills
+    assert "沟通能力" in skills
+    assert "Excel" in skills
+    assert "MATLAB" in skills
+    assert "data analysis" not in skills
+    assert "communication skills" not in skills
+
+
+def test_extract_skills_dedup_subsumed():
+    # 命中 MS Office 时不应再重复 Office（整词包含去重）
+    t = "熟练使用 MS Office 办公，常用 Power BI 做报表"
+    skills = extract_skills(t)
+    assert "MS Office" in skills
+    assert "Office" not in skills
+    assert "Power BI" in skills
+    assert "BI" not in skills
+
+
+def test_extract_personality_intro_extro():
+    # 从个人总结抽取「外向 / 内向」等性格词（原文字面，不润色）
+    t = "自我评价：性格偏外向，做事细心，有时也偏内向，但乐于团队协作"
+    r = extract_personality(t)
+    assert r is not None
+    assert "外向" in r
+    assert "内向" in r
+    assert "细心" in r
 
 
 def test_extract_personality_from_summary():

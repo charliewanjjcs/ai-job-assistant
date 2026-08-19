@@ -308,7 +308,7 @@ def main():
                         "或需要常与人沟通；或一直对着电脑数据。",
         )
         st.text_input("掌握的技能（逗号分隔）", key="skills", placeholder="Python, MySQL, Redis")
-        st.text_input("性格描述（取简历原话）", key="personality", placeholder="细心、抗压、沟通好")
+        st.text_input("性格描述（外向/内向、细心、抗压等）", key="personality", placeholder="外向、细心、抗压、沟通好")
         st.text_input("期望工作城市", key="city")
 
         # 预期薪资：左=计薪方式，中=纯数字金额，右=币种（手动填充；PDF 解析可自动带出）

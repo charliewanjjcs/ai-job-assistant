@@ -41,50 +41,90 @@ def _token_present(text: str, token: str) -> bool:
     return re.search(pat, text, re.I) is not None
 
 
-# 技术/工具词表（命中即视为具备该技能；全部以词表为边界，不乱抓）
+# 技术/工具硬技能词库（命中即视为具备该技能；全部以词表为边界，不乱抓）
+# 同一概念提供「中文 / 英文」两种表述，输出时原样保留简历中出现的语言——
+# 中文简历命中中文词、英文简历命中英文词，不翻译、不双语；因此用户「掌握的技能」栏位语言自然一致。
 SKILL_VOCAB: List[str] = [
-    # 语言
-    "Python", "Go", "Golang", "Java", "C++", "C#", "JavaScript", "TypeScript", "Rust",
-    "PHP", "Ruby", "Swift", "Kotlin", "Scala", "HTML", "CSS", "SQL",
+    # 编程语言
+    "Python", "Java", "JavaScript", "TypeScript", "C++", "C#", "Golang", "Go 语言", "Go语言",
+    "PHP", "Ruby", "Swift", "Kotlin", "Scala", "Rust", "R 语言", "R language",
+    "MATLAB", "Matlab", "SQL", "HTML", "CSS", "Shell", "Bash",
     # 数据库 / 中间件
-    "MySQL", "PostgreSQL", "Redis", "MongoDB", "Elasticsearch", "Kafka", "RabbitMQ", "Oracle",
-    # 运维 / 工程
-    "Docker", "Kubernetes", "K8s", "Linux", "Nginx", "Git", "Shell",
-    "Django", "Flask", "FastAPI", "Spring", "Spring Boot", "React", "Vue", "Node.js",
-    "TensorFlow", "PyTorch", "Hadoop", "Spark", "Flink", "Hive",
+    "MySQL", "PostgreSQL", "Redis", "MongoDB", "Oracle", "SQL Server",
+    "Elasticsearch", "Kafka", "RabbitMQ",
+    # 运维 / 云
+    "Docker", "Kubernetes", "K8s", "Linux", "Nginx", "Git",
+    "阿里云", "AWS", "腾讯云", "Azure", "云计算", "cloud computing",
+    # 工程框架
+    "Django", "Flask", "FastAPI", "Spring", "Spring Boot", "React", "Vue",
+    "Node.js", "Angular", "TensorFlow", "PyTorch",
     # 大数据 / AI
-    "机器学习", "machine learning", "深度学习", "deep learning", "NLP", "计算机视觉",
-    "大模型", "LLM", "Prompt", "ETL", "数仓", "数据仓库",
-    # 办公 / 分析软件（用户明确点名：MS Office、Excel、data analysis 等）
+    "Hadoop", "Spark", "Flink", "Hive", "ETL", "数仓", "数据仓库", "数据挖掘",
+    "数据可视化", "数据建模",
+    "机器学习", "machine learning", "深度学习", "deep learning", "NLP",
+    "计算机视觉", "大模型", "LLM", "Prompt",
+    # 办公 / 分析软件（用户点名：MS Office、Excel、PowerPoint、Power BI 等）
     "MS Office", "Office", "Excel", "PowerPoint", "PPT", "Word",
-    "Outlook", "Visio", "WPS", "Tableau", "Power BI", "PowerBI", "BI",
-    "data analysis", "data analytics", "数据分析", "数据可视化", "数据挖掘",
+    "Outlook", "Visio", "WPS", "Access", "Tableau", "Power BI", "PowerBI", "BI",
+    "SAP", "Salesforce", "ERP", "CRM",
     # 设计 / 产品 / 运营工具
     "Figma", "Axure", "Sketch", "Photoshop", "Illustrator", "Xmind",
+    "原型设计", "产品设计", "UI设计", "UI 设计",
     "SEO", "SEM", "Google Analytics", "A/B测试", "埋点",
-    # 业务系统
-    "SAP", "Salesforce", "CRM", "ERP", "用友", "金蝶",
     # 项目管理 / 协作
     "Jira", "Confluence", "Scrum", "Kanban", "敏捷",
 ]
 
-# 软技能词表（从经历描述中抓取，均为明确指向「能力」的短语，避免误抓）
+# 软技能词库（从经历/描述中抓取，均为明确指向「能力」的短语；中英文双语）
 SOFT_SKILL_VOCAB: List[str] = [
-    "数据分析", "数据可视化", "数据挖掘", "市场调研", "用户调研", "竞品分析", "需求分析",
-    "制定SOP", "流程优化", "流程梳理", "沟通协调", "团队协作", "跨部门协作", "项目管理",
-    "项目统筹", "商务谈判", "商务沟通", "客户维护", "客户关系管理", "危机处理", "培训带教",
-    "员工培训", "报告撰写", "方案策划", "活动策划", "预算管控", "成本控制", "风险管理",
-    "问题解决", "时间管理", "团队管理", "人员管理", "英文沟通", "英语沟通", "演讲汇报",
-    "公开演讲", "产品规划", "产品设计", "用户增长", "运营策划", "内容运营", "社群运营",
-    "业务分析", "财务分析", "供应链管理", "供应商管理", "质量管控", "自动化测试", "性能优化",
+    "数据分析", "data analysis", "data analytics",
+    "数据可视化", "data visualization",
+    "数据挖掘", "data mining",
+    "市场调研", "market research",
+    "用户调研", "user research",
+    "竞品分析", "competitive analysis",
+    "需求分析", "requirement analysis",
+    "制定SOP", "流程优化", "流程梳理",
+    "沟通协调", "团队协作", "跨部门协作",
+    "项目管理", "project management", "项目统筹",
+    "商务谈判", "商务沟通", "客户维护", "客户关系管理", "危机处理",
+    "培训带教", "员工培训", "报告撰写", "方案策划", "活动策划",
+    "预算管控", "成本控制", "风险管理",
+    "问题解决", "problem solving",
+    "时间管理", "time management", "团队管理", "人员管理",
+    "英文沟通", "英语沟通", "演讲汇报", "公开演讲", "presentation skills",
+    "产品规划", "产品设计", "用户增长", "user growth",
+    "运营策划", "内容运营", "社群运营",
+    "业务分析", "business analysis", "财务分析", "financial analysis",
+    "供应链管理", "供应商管理", "质量管控", "自动化测试", "性能优化",
+    "沟通能力", "communication skills",
+    "团队合作", "teamwork",
+    "领导力", "leadership",
 ]
 
 
-def extract_skills(text: str) -> List[str]:
-    """从文本抽取技能（去重、保序）。
+def _dedupe_subsumed(found: List[str]) -> List[str]:
+    """去掉被其它已命中词条「整词包含」的短词条，避免重复。
 
-    仅以「词表」为边界做逐词匹配，**不会**把「技能」标签后的整段文字当作技能。
-    英文短词（Go / Git 等）使用单词边界匹配，避免命中 Google / GitHub 等长词造成误抓。
+    命中「MS Office」后不再重复「Office」；命中「Power BI」后不再重复「BI」。
+    但「MySQL」与「SQL」互不包含（SQL 不是 MySQL 的独立整词），两者都保留。
+    """
+    kept: List[str] = []
+    for t in sorted(found, key=len, reverse=True):
+        if any(_token_present(other, t) and other != t for other in kept):
+            continue
+        kept.append(t)
+    order = {t: i for i, t in enumerate(found)}
+    return sorted(kept, key=lambda x: order[x])
+
+
+def extract_skills(text: str) -> List[str]:
+    """从文本抽取技能（去重、保序、语言原样保留）。
+
+    仅以「词库」为边界做逐词匹配，**不会**把「技能」标签后的整段文字当作技能。
+    英文短词（Git 等）使用单词边界匹配，避免命中 GitHub 等长词造成误抓。
+    同概念的中英文词条都收录，命中哪个就输出哪个（不翻译、不双语）——
+    因此中文简历自然填中文、英文简历填英文，JD 文本中的技能同理。
     """
     if not text:
         return []
@@ -92,7 +132,7 @@ def extract_skills(text: str) -> List[str]:
     for s in SKILL_VOCAB + SOFT_SKILL_VOCAB:
         if s not in found and _token_present(text, s):
             found.append(s)
-    return found
+    return _dedupe_subsumed(found)
 
 
 # 城市词表（用于抽取工作城市）
@@ -120,7 +160,7 @@ LANGUAGE_LEVEL_MAP = {
 
 # 性格描述词表（从「个人总结 / 自我评价」等段落抽取，均为字面形容词/短语）
 PERSONALITY_VOCAB: List[str] = [
-    "积极乐观", "乐观", "开朗", "外向", "热情", "亲和",
+    "积极乐观", "乐观", "开朗", "外向", "内向", "热情", "亲和",
     "细心", "细致", "细致入微", "严谨", "认真", "务实", "踏实",
     "负责", "责任心强", "有责任心", "责任心", "靠谱",
     "抗压", "抗压能力强", "抗压强",
