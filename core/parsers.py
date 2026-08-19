@@ -95,8 +95,9 @@ SOFT_SKILL_VOCAB: List[str] = [
     "运营策划", "内容运营", "社群运营",
     "业务分析", "business analysis", "财务分析", "financial analysis",
     "供应链管理", "供应商管理", "质量管控", "自动化测试", "性能优化",
-    "沟通能力", "communication skills", "沟通",
+    "沟通能力", "沟通", "communication", "communication skills",
     "团队合作", "teamwork", "协作", "collaboration",
+    "人际交往", "人际交往能力", "interpersonal", "interpersonal skills",
     "领导力", "leadership", "领导能力",
     # 分析 / 解决问题类（用户点名：analytical and problem-solving skills；以及 attention to detail）
     "分析能力", "analytical skills", "analytical",
@@ -122,6 +123,7 @@ SKILL_SYNONYMS: dict = {
                         "analytical skills", "analytical", "analytical and problem-solving skills",
                         "analytical and problem solving skills", "解决问题", "分析与解决问题"],
     "communication skills": ["communication", "communicate", "沟通能力", "沟通"],
+    "interpersonal skills": ["interpersonal", "人际交往", "人际交往能力"],
     "teamwork": ["team work", "team collaboration", "团队合作", "团队协作", "协作", "collaboration"],
     "leadership": ["领导力", "领导能力", "lead"],
     "time management": ["时间管理"],

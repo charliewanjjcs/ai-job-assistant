@@ -131,6 +131,23 @@ def test_extract_skills_office_tools():
     assert len(skills) == 2
 
 
+def test_extract_skills_communication_interpersonal():
+    # 用户点名的软技能：communication / interpersonal skills 必须识别
+    # 1) 非连续写法 "communication and interpersonal skills" 也要命中
+    t1 = "Excellent communication and interpersonal skills; strong team player."
+    s1 = extract_skills(t1)
+    assert "communication" in s1
+    assert "interpersonal skills" in s1
+    # 2) 单独 "communication" 或 "interpersonal skills" 也要命中
+    assert "communication" in extract_skills("Strong communication, problem solving.")
+    assert "interpersonal skills" in extract_skills("Good interpersonal skills required.")
+    # 3) 中文 "人际交往能力" 应识别
+    t3 = "具备良好沟通能力，优秀的跨部门协作与人际交往能力。"
+    s3 = extract_skills(t3)
+    assert "沟通能力" in s3
+    assert "人际交往能力" in s3
+
+
 def test_extract_skills_cjk_adjacent():
     # 修复：英文技能紧贴中文（无空格）也应识别；且不能命中 Google/GitHub
     t = "精通Python，熟悉MySQL、Redis，有Docker、Kubernetes经验者优先使用Git"

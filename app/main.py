@@ -365,18 +365,20 @@ def main():
 
     with c2:
         st.header("职位描述 JD")
+        # JD 原文粘贴放在最上方（岗位标题之上）：粘贴后由 on_jd_text_change 回调回填
+        # 必需/加分技能、语言要求、到岗偏好，便于用户直接看到并微调。
+        st.text_area(
+            "JD 原文（粘贴）", key="jd_text", height=160, on_change=on_jd_text_change,
+            placeholder="把招聘网页上的 JD 文本粘贴到这里（第三步将支持直接填 URL）",
+        )
         st.text_input("岗位标题", key="jd_title")
         st.text_input("公司", key="jd_company")
         st.text_input("城市", key="jd_city")
         st.text_input("必需技能", key="jd_req", placeholder="Python, Go, MySQL")
         st.text_input("加分技能", key="jd_pref", placeholder="Docker, K8s")
-        st.text_area(
-            "JD 原文（粘贴）", key="jd_text", height=160, on_change=on_jd_text_change,
-            placeholder="把招聘网页上的 JD 文本粘贴到这里（第三步将支持直接填 URL）",
-        )
 
-        # JD 语言要求（自动识别 + 手动增删）：JD 原文变化时由 on_jd_text_change 回调回填技能/语言/到岗
-        st.markdown("**JD 语言要求（自动识别 + 可增删）**")
+        # 语言要求（自动识别 + 手动增删）：JD 原文变化时由 on_jd_text_change 回调回填
+        st.markdown("**语言要求**")
         _lang_manager("jd_lang_list", "")
         st.checkbox("JD 偏好「尽快到岗 / Immediate available」", key="jd_prefers_immediate")
 
