@@ -12,13 +12,14 @@ if ROOT not in sys.path:
 import app.main as m
 
 
-def _set_session(d):
+def _set_session(monkeypatch, d):
     # build_profile / build_jd / on_jd_text_change 都只读 st.session_state.get(...)
-    m.st.session_state = dict(d)
+    # 用 monkeypatch.setattr 保证测试结束后自动恢复，避免污染其它测试（尤其 AppTest）
+    monkeypatch.setattr(m.st, "session_state", dict(d))
 
 
-def test_build_profile_annual_stored_in_yuan():
-    _set_session({
+def test_build_profile_annual_stored_in_yuan(monkeypatch):
+    _set_session(monkeypatch, {
         "resume": "",
         "skills": "Python",
         "personality": "细心",
@@ -38,8 +39,8 @@ def test_build_profile_annual_stored_in_yuan():
     assert p.availability.value == "一个月"
 
 
-def test_build_profile_availability_unfilled_is_none():
-    _set_session({
+def test_build_profile_availability_unfilled_is_none(monkeypatch):
+    _set_session(monkeypatch, {
         "resume": "", "skills": "", "personality": None, "ideal_job": None, "city": None,
         "exp_period_label": "月薪", "exp_currency_label": "¥ 人民币 (CNY)", "exp_value": 0.0,
         "lang_list": [], "availability": "未填写",
@@ -49,10 +50,10 @@ def test_build_profile_availability_unfilled_is_none():
     assert p.availability is None
 
 
-def test_on_jd_text_change_autofills_skills_and_languages():
+def test_on_jd_text_change_autofills_skills_and_languages(monkeypatch):
     jd = ("任职要求：精通Python，熟悉MySQL、Redis，有Docker、Kubernetes经验者优先；"
           "英语可作为工作语言，要求尽快到岗")
-    _set_session({"jd_text": jd})
+    _set_session(monkeypatch, {"jd_text": jd})
     m.on_jd_text_change()
     s = m.st.session_state
     assert "Python" in s["jd_req"] and "MySQL" in s["jd_req"]
@@ -64,7 +65,7 @@ def test_on_jd_text_change_autofills_skills_and_languages():
     assert s["jd_prefers_immediate"] is True
 
 
-def test_on_jd_text_change_empty_no_crash():
-    _set_session({"jd_text": ""})
+def test_on_jd_text_change_empty_no_crash(monkeypatch):
+    _set_session(monkeypatch, {"jd_text": ""})
     m.on_jd_text_change()  # 空文本应直接返回，不抛异常
     assert m.st.session_state.get("jd_req") is None
