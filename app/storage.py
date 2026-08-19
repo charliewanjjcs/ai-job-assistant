@@ -10,14 +10,19 @@ import hashlib
 import json
 import os
 import sqlite3
+import sys
 import time
 
 # 项目根（app/ 的上级目录）
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if ROOT not in sys.path:
+    sys.path.insert(0, ROOT)
 DEFAULT_DB = os.path.join(ROOT, "data", "app.db")
 
 # 模块级可覆盖的数据库路径（测试用）
 DB_PATH = DEFAULT_DB
+
+from core.models import Report  # noqa: E402
 
 
 def set_db_path(path: str) -> None:
@@ -88,6 +93,22 @@ def init_db(db_path: str | None = None) -> None:
             );
             CREATE INDEX IF NOT EXISTS idx_vc_phone
                 ON verification_codes(phone, used);
+
+            CREATE TABLE IF NOT EXISTS analysis_results (
+                id             INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id        INTEGER NOT NULL,
+                role           TEXT,
+                company        TEXT,
+                generated_at   TEXT,
+                skill_score    REAL,
+                salary_verdict TEXT,
+                jd_text        TEXT,
+                report_json    TEXT NOT NULL,
+                created_at     TEXT NOT NULL DEFAULT (datetime('now')),
+                FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+            );
+            CREATE INDEX IF NOT EXISTS idx_analysis_user
+                ON analysis_results(user_id, id);
             """
         )
         conn.commit()
@@ -379,3 +400,92 @@ def verify_code(phone: str, code: str) -> bool:
         return True
     finally:
         conn.close()
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 分析结果（职位分析持久化；report_json 存 report.model_dump(mode="json")）
+# ─────────────────────────────────────────────────────────────────────────────
+def save_analysis_result(user_id: int, report: Report, jd_text: str = "") -> int:
+    """持久化一条分析结果，返回新记录 id。
+
+    report_json = json.dumps(report.model_dump(mode="json"), ensure_ascii=False)；
+    冗余 role/company/generated_at/skill_score/salary_verdict 供列表展示。
+    """
+    report_json = json.dumps(report.model_dump(mode="json"), ensure_ascii=False)
+    conn = _connect()
+    try:
+        cur = conn.execute(
+            """INSERT INTO analysis_results
+               (user_id, role, company, generated_at, skill_score, salary_verdict, jd_text, report_json)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+            (
+                user_id,
+                report.role,
+                report.company,
+                report.generated_at,
+                report.skill_match.match_score,
+                report.salary_analysis.verdict,
+                jd_text or "",
+                report_json,
+            ),
+        )
+        conn.commit()
+        return int(cur.lastrowid)
+    finally:
+        conn.close()
+
+
+def list_analysis_results(user_id: int) -> list[dict]:
+    """该用户全部分析结果（按 id 倒序，最新在前）。仅返回列表展示所需列。"""
+    conn = _connect()
+    try:
+        rows = conn.execute(
+            """SELECT id, role, company, generated_at, skill_score, salary_verdict, created_at
+               FROM analysis_results WHERE user_id=? ORDER BY id DESC""",
+            (user_id,),
+        ).fetchall()
+        return [dict(r) for r in rows]
+    finally:
+        conn.close()
+
+
+def get_analysis_result(user_id: int, analysis_id: int) -> dict | None:
+    """返回单条完整记录（含 report_json、jd_text）；无权限或不存在返回 None。"""
+    conn = _connect()
+    try:
+        row = conn.execute(
+            "SELECT * FROM analysis_results WHERE id=? AND user_id=?",
+            (analysis_id, user_id),
+        ).fetchone()
+        return dict(row) if row else None
+    finally:
+        conn.close()
+
+
+def delete_analysis_result(user_id: int, analysis_id: int) -> bool:
+    """删除单条（仅限本用户），返回是否真的删除了一行。"""
+    conn = _connect()
+    try:
+        cur = conn.execute(
+            "DELETE FROM analysis_results WHERE id=? AND user_id=?",
+            (analysis_id, user_id),
+        )
+        conn.commit()
+        return cur.rowcount > 0
+    finally:
+        conn.close()
+
+
+def clear_analysis_results(user_id: int) -> None:
+    """清空该用户全部分析结果。"""
+    conn = _connect()
+    try:
+        conn.execute("DELETE FROM analysis_results WHERE user_id=?", (user_id,))
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def deserialize_report(report_json: str) -> Report:
+    """把 report_json 反序列化为 Report（详情渲染用）。"""
+    return Report.model_validate(json.loads(report_json))

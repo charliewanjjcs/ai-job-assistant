@@ -13,6 +13,17 @@ if ROOT not in sys.path:
     sys.path.insert(0, ROOT)
 
 import app.storage as storage
+from core.models import Report, SalaryAnalysis, SkillMatchResult
+
+
+def _make_report(role="后端工程师", company="Acme", score=88.0, verdict="符合预期"):
+    return Report(
+        role=role,
+        company=company,
+        skill_match=SkillMatchResult(match_score=score, matched=["Python"]),
+        salary_analysis=SalaryAnalysis(verdict=verdict, expected=300000.0),
+        generated_at="2026-08-19T10:00:00",
+    )
 
 
 @pytest.fixture
@@ -132,3 +143,87 @@ def test_verification_code_expire_and_reuse(db):
     assert storage.verify_code(phone, "654321") is False
     # 错误码失败
     assert storage.verify_code(phone, "000000") is False
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 分析结果（analysis_results 表）
+# ─────────────────────────────────────────────────────────────────────────────
+def test_analysis_save_and_get_roundtrip(db):
+    uid = storage.get_or_create_user("wechat", "wx-ar")
+    rid = storage.save_analysis_result(uid, _make_report(), jd_text="JD 原文内容")
+    row = storage.get_analysis_result(uid, rid)
+    assert row is not None
+    assert row["role"] == "后端工程师"
+    assert row["company"] == "Acme"
+    assert row["skill_score"] == 88.0
+    assert row["salary_verdict"] == "符合预期"
+    assert row["jd_text"] == "JD 原文内容"
+    # 反序列化还原
+    report = storage.deserialize_report(row["report_json"])
+    assert isinstance(report, Report)
+    assert report.role == "后端工程师"
+    assert report.skill_match.match_score == 88.0
+
+
+def test_analysis_json_unicode(db):
+    uid = storage.get_or_create_user("wechat", "wx-ar2")
+    rid = storage.save_analysis_result(
+        uid, _make_report(verdict="数据不足"), jd_text="需要 3 年 Python 经验"
+    )
+    row = storage.get_analysis_result(uid, rid)
+    # ensure_ascii=False：中文原样入库
+    assert "数据不足" in row["report_json"]
+    assert "需要 3 年 Python 经验" in row["jd_text"]
+    report = storage.deserialize_report(row["report_json"])
+    assert report.salary_analysis.verdict == "数据不足"
+
+
+def test_analysis_list_desc_order(db):
+    uid = storage.get_or_create_user("wechat", "wx-ar3")
+    id1 = storage.save_analysis_result(uid, _make_report(role="岗位1"))
+    id2 = storage.save_analysis_result(uid, _make_report(role="岗位2"))
+    id3 = storage.save_analysis_result(uid, _make_report(role="岗位3"))
+    rows = storage.list_analysis_results(uid)
+    assert [r["id"] for r in rows] == [id3, id2, id1]  # 最新在前
+
+
+def test_analysis_list_columns_only(db):
+    uid = storage.get_or_create_user("wechat", "wx-ar4")
+    storage.save_analysis_result(uid, _make_report(), jd_text="x")
+    row = storage.list_analysis_results(uid)[0]
+    assert "id" in row and "role" in row and "skill_score" in row
+    assert "report_json" not in row  # 列表轻量，不含大字段
+    assert "jd_text" not in row
+
+
+def test_analysis_user_isolation(db):
+    a = storage.get_or_create_user("wechat", "wx-a")
+    b = storage.get_or_create_user("wechat", "wx-b")
+    storage.save_analysis_result(a, _make_report(role="A1"))
+    storage.save_analysis_result(a, _make_report(role="A2"))
+    bid = storage.save_analysis_result(b, _make_report(role="B1"))
+    assert len(storage.list_analysis_results(a)) == 2
+    assert len(storage.list_analysis_results(b)) == 1
+    # 跨用户不可读
+    assert storage.get_analysis_result(a, bid) is None
+
+
+def test_analysis_delete(db):
+    uid = storage.get_or_create_user("wechat", "wx-ar5")
+    rid = storage.save_analysis_result(uid, _make_report())
+    assert storage.delete_analysis_result(uid, rid) is True
+    assert storage.get_analysis_result(uid, rid) is None
+    assert storage.list_analysis_results(uid) == []
+    # 不存在/已删 → False
+    assert storage.delete_analysis_result(uid, rid) is False
+
+
+def test_analysis_clear(db):
+    a = storage.get_or_create_user("wechat", "wx-c1")
+    b = storage.get_or_create_user("wechat", "wx-c2")
+    storage.save_analysis_result(a, _make_report(role="A1"))
+    storage.save_analysis_result(a, _make_report(role="A2"))
+    storage.save_analysis_result(b, _make_report(role="B1"))
+    storage.clear_analysis_results(a)
+    assert storage.list_analysis_results(a) == []
+    assert len(storage.list_analysis_results(b)) == 1  # 仅清空 a
