@@ -68,6 +68,62 @@ def test_extract_personality_literal():
     assert extract_personality("无相关字段 abc") is None
 
 
+def test_extract_skills_no_false_positive():
+    # 边界匹配：'Go' 不应命中 'Google'，'Git' 不应命中 'GitHub'，'Office' 不应命中 'officer'
+    t = "Google 是一家公司，团队使用 GitHub，招聘一名 officer"
+    skills = extract_skills(t)
+    assert "Go" not in skills
+    assert "Git" not in skills
+    assert "Office" not in skills
+
+
+def test_extract_skills_genuine_go_git():
+    # 真实出现时仍应命中（独立词）
+    t = "熟悉 Go 语言与 Git 版本控制"
+    skills = extract_skills(t)
+    assert "Go" in skills
+    assert "Git" in skills
+
+
+def test_extract_skills_no_raw_section_grab():
+    # 不应把「技能」标签后的整段文字当作技能
+    t = "技能：负责需求评审，参与代码编写与测试，协助上线"
+    assert extract_skills(t) == []
+
+
+def test_extract_skills_office_tools():
+    # 用户点名的办公/分析工具应被识别
+    t = "熟练使用 MS Office、Excel 与 data analysis，常用 PowerPoint 做汇报"
+    skills = extract_skills(t)
+    assert "MS Office" in skills
+    assert "Excel" in skills
+    assert "data analysis" in skills
+    assert "PowerPoint" in skills
+
+
+def test_extract_personality_from_summary():
+    # 从「个人总结 / 自我评价」段落抽取性格词（不依赖显式 性格 标签）
+    t = "个人总结：本人性格积极乐观，做事细致，富有责任心，乐于团队协作。"
+    r = extract_personality(t)
+    assert r is not None
+    assert "积极乐观" in r
+    assert "细致" in r
+    assert "团队协作" in r
+
+
+def test_extract_personality_summary_dedup():
+    # 同时命中「责任心」与「责任心强」时只保留更长表达
+    t = "自我评价：责任心强，做事细心，执行力强"
+    r = extract_personality(t)
+    assert r is not None
+    assert "责任心强" in r
+    assert "责任心、" not in (r + "、")  # 不应出现单独的「责任心」
+    assert "细心" in r
+    assert "执行力强" in r
+
+
+
+
 def test_parse_expected_salary_variants():
     a = parse_expected_salary("预期年薪：35万")
     assert a.value == 350000.0 and a.period.value == "annual" and a.currency.value == "CNY"

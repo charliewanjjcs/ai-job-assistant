@@ -35,10 +35,13 @@ from modules.resume_pdf.pdf_parser import PdfResumeParser
 # 选项常量
 LANG_OPTIONS = ["英语", "粤语", "普通话", "日语", "法语", "韩语", "德语", "西班牙语", "其他"]
 LEVEL_OPTIONS = ["基础", "熟练", "母语"]
-CURRENCY_OPTIONS = [("¥ 人民币 (CNY)", "CNY"), ("HK$ 港币 (HKD)", "HKD")]
-PERIOD_OPTIONS = [("年薪", "annual"), ("月薪", "monthly"), ("时薪", "hourly")]
 AVAIL_OPTIONS = ["立刻", "一周内", "一个月", "两个月", "三个月", "更长"]
-EXP_LABELS = {"annual": "预期年薪（万元）", "monthly": "预期月薪（元）", "hourly": "预期时薪（元）"}
+# 预期薪资：用「标签」做 selectbox 选项，再映射到内部枚举值（避免元组选项导致 KeyError）
+PERIOD_LABELS = ["年薪", "月薪", "时薪"]
+PERIOD_VALUES = {"年薪": "annual", "月薪": "monthly", "时薪": "hourly"}
+CURRENCY_LABELS = ["¥ 人民币 (CNY)", "HK$ 港币 (HKD)"]
+CURRENCY_VALUES = {"¥ 人民币 (CNY)": "CNY", "HK$ 港币 (HKD)": "HKD"}
+EXP_LABELS = {"年薪": "预期年薪（万元）", "月薪": "预期月薪（元）", "时薪": "预期时薪（元）"}
 
 
 class DemoLLM:
@@ -104,8 +107,10 @@ def build_profile():
     city = st.session_state.get("city", "") or parsed.get("city")
 
     # 预期薪资：手动优先；手动未填则用解析结果
-    period = st.session_state.get("exp_period", "annual")
-    currency = st.session_state.get("exp_currency", "CNY")
+    period_label = st.session_state.get("exp_period_label", "年薪")
+    period = PERIOD_VALUES.get(period_label, "annual")
+    currency_label = st.session_state.get("exp_currency_label", "¥ 人民币 (CNY)")
+    currency = CURRENCY_VALUES.get(currency_label, "CNY")
     value = st.session_state.get("exp_value", 0.0)
     expected = None
     if value and value > 0:
@@ -282,11 +287,15 @@ def main():
                             st.session_state["city"] = prof.city
                         if prof.expected_salary:
                             es = prof.expected_salary
-                            st.session_state["exp_period"] = es.period.value
+                            st.session_state["exp_period_label"] = {
+                                "annual": "年薪", "monthly": "月薪", "hourly": "时薪"
+                            }.get(es.period.value, "年薪")
                             st.session_state["exp_value"] = (
                                 round(es.value / 10000.0, 1) if es.period.value == "annual" else es.value
                             )
-                            st.session_state["exp_currency"] = es.currency.value
+                            st.session_state["exp_currency_label"] = {
+                                "CNY": "¥ 人民币 (CNY)", "HKD": "HK$ 港币 (HKD)"
+                            }.get(es.currency.value, "¥ 人民币 (CNY)")
                         st.success("已从 PDF 提取并填充字段，可手动调整。")
                 except Exception as e:
                     st.error(f"PDF 解析失败：{e}")
@@ -302,12 +311,12 @@ def main():
         st.text_input("性格描述（取简历原话）", key="personality", placeholder="细心、抗压、沟通好")
         st.text_input("期望工作城市", key="city")
 
-        # 预期薪资：时薪/月薪/年薪 + 币种（手动填充；PDF 解析可自动带出）
+        # 预期薪资：左=计薪方式，中=纯数字金额，右=币种（手动填充；PDF 解析可自动带出）
         st.markdown("**预期薪资**")
-        ecol1, ecol2 = st.columns([2, 2])
-        period = ecol1.selectbox("计薪方式", PERIOD_OPTIONS, key="exp_period")
-        currency = ecol2.selectbox("币种", CURRENCY_OPTIONS, key="exp_currency")
-        st.number_input(EXP_LABELS[period], key="exp_value", min_value=0.0, step=1.0)
+        ecol1, ecol2, ecol3 = st.columns(3)
+        period_label = ecol1.selectbox("计薪方式", PERIOD_LABELS, key="exp_period_label")
+        ecol2.number_input(EXP_LABELS[period_label], key="exp_value", min_value=0.0, step=1.0)
+        ecol3.selectbox("币种", CURRENCY_LABELS, key="exp_currency_label")
 
         # 语言（手动选择：语言 + 熟练度 3 档）
         st.markdown("**语言能力（手动选择，用于匹配 JD 语言要求）**")

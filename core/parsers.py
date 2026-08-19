@@ -8,11 +8,10 @@ Phase 2（PDF 解析）与 Phase 3（URL 解析）会用更强的解析器以同
 设计约束：
 - 纯函数、无 streamlit 依赖，便于单测。
 - 只做「抽取」，不做任何判断；所有匹配/建议仍由 core 里的稳定模块负责。
-- 技能抽取三路合并且全部以「词表/字段」为边界，避免乱抓：
-  1) 技术词表（SKILL_VOCAB）在全文命中
-  2) 软技能词表（SOFT_SKILL_VOCAB）在全文命中（从经历里抓软技能）
-  3) 显式「技能」字段里的条目（即使不在词表也保留，保证不漏）
-- 性格抽取：严格取简历原文字面，绝不润色/编造。
+- 技能抽取：以「词表」为唯一边界，逐词做带边界的匹配（英文用单词边界、含特殊字符用前后非字母数字边界），
+  只认 MS Office / Excel / data analysis 这类明确技能词，**绝不**把「技能」标签后的整段文字当作技能。
+- 性格抽取：优先取简历「性格/个性/特质」标签后的原文字面；若没有，则从「个人总结/自我评价」等段落中
+  抽取性格描述词（积极乐观、细致等），不润色、不编造。
 """
 from __future__ import annotations
 
@@ -27,15 +26,46 @@ from .models import (
     SalaryAmount,
 )
 
-# 技术词表（覆盖常见技术栈；命中即视为具备该技能）
+
+def _token_present(text: str, token: str) -> bool:
+    """判断 token 是否作为「独立词」出现在 text 中（大小写不敏感）。
+
+    - 纯英文字母/数字词：用 \\b 单词边界，避免 'Go' 命中 'Google'、'Git' 命中 'GitHub'。
+    - 含特殊字符（. + # 等）或中文词：用「前后非字母数字」边界，避免嵌在更长单词里被误判。
+    """
+    esc = re.escape(token)
+    if re.fullmatch(r"[A-Za-z0-9]+", token):
+        pat = r"\b" + esc + r"\b"
+    else:
+        pat = r"(?<![A-Za-z0-9])" + esc + r"(?![A-Za-z0-9])"
+    return re.search(pat, text, re.I) is not None
+
+
+# 技术/工具词表（命中即视为具备该技能；全部以词表为边界，不乱抓）
 SKILL_VOCAB: List[str] = [
+    # 语言
     "Python", "Go", "Golang", "Java", "C++", "C#", "JavaScript", "TypeScript", "Rust",
-    "PHP", "Ruby", "Swift", "Kotlin", "Scala",
-    "MySQL", "PostgreSQL", "Redis", "MongoDB", "Elasticsearch", "Kafka", "RabbitMQ",
+    "PHP", "Ruby", "Swift", "Kotlin", "Scala", "HTML", "CSS", "SQL",
+    # 数据库 / 中间件
+    "MySQL", "PostgreSQL", "Redis", "MongoDB", "Elasticsearch", "Kafka", "RabbitMQ", "Oracle",
+    # 运维 / 工程
     "Docker", "Kubernetes", "K8s", "Linux", "Nginx", "Git", "Shell",
-    "Django", "Flask", "FastAPI", "Spring", "Spring Boot", "React", "Vue", "Node.js", "Node",
-    "TensorFlow", "PyTorch", "HTML", "CSS", "SQL", "Oracle", "Hadoop", "Spark", "Flink",
-    "Hive", "Tableau", "Excel", "PowerBI", "gRPC", "RPC", "MQ", "Power BI",
+    "Django", "Flask", "FastAPI", "Spring", "Spring Boot", "React", "Vue", "Node.js",
+    "TensorFlow", "PyTorch", "Hadoop", "Spark", "Flink", "Hive",
+    # 大数据 / AI
+    "机器学习", "machine learning", "深度学习", "deep learning", "NLP", "计算机视觉",
+    "大模型", "LLM", "Prompt", "ETL", "数仓", "数据仓库",
+    # 办公 / 分析软件（用户明确点名：MS Office、Excel、data analysis 等）
+    "MS Office", "Office", "Excel", "PowerPoint", "PPT", "Word",
+    "Outlook", "Visio", "WPS", "Tableau", "Power BI", "PowerBI", "BI",
+    "data analysis", "data analytics", "数据分析", "数据可视化", "数据挖掘",
+    # 设计 / 产品 / 运营工具
+    "Figma", "Axure", "Sketch", "Photoshop", "Illustrator", "Xmind",
+    "SEO", "SEM", "Google Analytics", "A/B测试", "埋点",
+    # 业务系统
+    "SAP", "Salesforce", "CRM", "ERP", "用友", "金蝶",
+    # 项目管理 / 协作
+    "Jira", "Confluence", "Scrum", "Kanban", "敏捷",
 ]
 
 # 软技能词表（从经历描述中抓取，均为明确指向「能力」的短语，避免误抓）
@@ -49,11 +79,21 @@ SOFT_SKILL_VOCAB: List[str] = [
     "业务分析", "财务分析", "供应链管理", "供应商管理", "质量管控", "自动化测试", "性能优化",
 ]
 
-# 技能字段常见标签
-SKILL_SECTION_LABELS = ("技能", "专业技能", "掌握技能", "掌握的技能", "技术栈", "技能特长", "特长", "skill", "skills")
 
-# 技能条目前导修饰词（提取时剥离，得到干净技能名）
-_SKILL_QUALIFIERS = ("熟练掌握", "熟悉", "精通", "了解", "懂", "会", "良好的", "较强", "扎实的", "具备", "掌握")
+def extract_skills(text: str) -> List[str]:
+    """从文本抽取技能（去重、保序）。
+
+    仅以「词表」为边界做逐词匹配，**不会**把「技能」标签后的整段文字当作技能。
+    英文短词（Go / Git 等）使用单词边界匹配，避免命中 Google / GitHub 等长词造成误抓。
+    """
+    if not text:
+        return []
+    found: List[str] = []
+    for s in SKILL_VOCAB + SOFT_SKILL_VOCAB:
+        if s not in found and _token_present(text, s):
+            found.append(s)
+    return found
+
 
 # 城市词表（用于抽取工作城市）
 CITIES: List[str] = [
@@ -78,32 +118,30 @@ LANGUAGE_LEVEL_MAP = {
     "基础": LanguageLevel.BASIC, "入门": LanguageLevel.BASIC, "basic": LanguageLevel.BASIC,
 }
 
+# 性格描述词表（从「个人总结 / 自我评价」等段落抽取，均为字面形容词/短语）
+PERSONALITY_VOCAB: List[str] = [
+    "积极乐观", "乐观", "开朗", "外向", "热情", "亲和",
+    "细心", "细致", "细致入微", "严谨", "认真", "务实", "踏实",
+    "负责", "责任心强", "有责任心", "责任心", "靠谱",
+    "抗压", "抗压能力强", "抗压强",
+    "主动", "积极主动", "进取", "上进", "自律", "独立",
+    "沉稳", "冷静", "耐心", "勤奋",
+    "高效", "执行力强", "结果导向", "目标导向", "客户导向",
+    "逻辑思维", "逻辑清晰",
+    "学习能力强", "快速学习", "好奇心强",
+    "团队合作", "团队协作", "善于沟通", "沟通能力强", "表达能力强", "同理心",
+    "创新思维", "创新意识", "灵活",
+]
 
-def extract_skills(text: str) -> List[str]:
-    """从文本抽取技能（去重、保序）。
-
-    三路合并：技术词表命中 + 软技能词表命中 + 显式「技能」字段条目。
-    全部以词表/字段为边界，不会凭空抓取无关词。
-    """
-    if not text:
-        return []
-    low = text.lower()
-    found: List[str] = []
-    for s in SKILL_VOCAB:
-        if s.lower() in low and s not in found:
-            found.append(s)
-    for s in SOFT_SKILL_VOCAB:
-        if s in text and s not in found:
-            found.append(s)
-    for item in _skill_section_items(text):
-        it = _clean_skill_token(item)
-        if it and it not in found:
-            found.append(it)
-    return found
+# 个人总结 / 自我评价 等段落标题
+PERSONALITY_SECTION_LABELS = (
+    "个人总结", "自我评价", "个人评价", "个人简介", "个人概述",
+    "个人基本情况", "个人资料", "About Me", "About", "Summary", "PROFILE", "Profile",
+)
 
 
-def _skill_section_items(text: str) -> List[str]:
-    """抽取「技能」字段区域内的条目（按分隔符切分）。"""
+def _extract_section(text: str, labels) -> str:
+    """抽取以 labels 中任一标题开头的「段落」文本（标题行 + 后续直到空行或新标题前）。"""
     lines = text.splitlines()
     chunks: List[str] = []
     in_sec = False
@@ -113,31 +151,21 @@ def _skill_section_items(text: str) -> List[str]:
             if in_sec:
                 break
             continue
-        m = re.match(r"^(技能|专业技能|掌握技能|技术栈|技能特长|特长|skill|skills)[\s:：]*(.*)$", s, re.I)
-        if m:
-            in_sec = True
-            content = m.group(2).strip()
-            if content:
-                chunks.append(content)
-            continue
-        if in_sec:
-            if re.match(r"^[^，,、\s]{0,14}[:：]", s):  # 遇到新段落标题则结束
+        if not in_sec:
+            hit = None
+            for lbl in labels:
+                if re.match(rf"^{re.escape(lbl)}[\s:：]", s, re.I):
+                    hit = lbl
+                    break
+            if hit is not None:
+                in_sec = True
+                chunks.append(re.sub(rf"^{re.escape(hit)}[\s:：]*", "", s, flags=re.I))
+                continue
+        else:
+            if re.match(r"^[^，,、\s]{0,16}[:：]", s):  # 遇到新段落标题则结束
                 break
             chunks.append(s)
-    out: List[str] = []
-    for piece in re.split(r"[，,、；;。/\n|｜]+", " ".join(chunks)):
-        piece = piece.strip().rstrip("。；;，,、 ")
-        if piece:
-            out.append(piece)
-    return out
-
-
-def _clean_skill_token(token: str) -> str:
-    t = token.strip()
-    for q in _SKILL_QUALIFIERS:
-        if t.startswith(q):
-            t = t[len(q):].strip()
-    return t
+    return "\n".join(chunks).strip()
 
 
 def extract_city(text: str) -> Optional[str]:
@@ -150,14 +178,26 @@ def extract_city(text: str) -> Optional[str]:
 
 
 def extract_personality(text: str) -> Optional[str]:
-    """严格取简历「性格/个性/特质」标签后的原文字面，不润色、不编造。"""
+    """抽取性格描述（原文字面，不润色、不编造）。
+
+    1) 优先取「性格/个性/个人特质/特质」标签后的原文字面；
+    2) 否则从「个人总结 / 自我评价」等段落抽取性格描述词，用「、」拼接（去掉被更长表达包含的短词）。
+    """
     if not text:
         return None
     for label in ("性格", "个性", "个人特质", "特质"):
         m = re.search(rf"{label}\s*[:：]\s*(.+)", text)
         if m:
             val = re.split(r"[。；\n]", m.group(1).strip())[0].strip().rstrip("，、 ")
-            return val or None
+            if val:
+                return val
+    region = _extract_section(text, PERSONALITY_SECTION_LABELS)
+    if region:
+        found = [p for p in PERSONALITY_VOCAB if _token_present(region, p)]
+        # 去掉被更长表达包含的短词（如保留了「责任心强」就不再保留「责任心」），并保持顺序去重
+        kept = [p for p in found if not any(p != q and p in q for q in found)]
+        if kept:
+            return "、".join(dict.fromkeys(kept))
     return None
 
 
