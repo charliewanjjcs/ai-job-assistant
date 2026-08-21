@@ -5,10 +5,18 @@
 """
 from __future__ import annotations
 
+import json
+import re
 import streamlit as st
 import uuid
 
-from core.parsers import parse_jd_text, parse_resume_text, split_skills
+from core.parsers import (
+    extract_soft_skills_heuristic,
+    parse_jd_text,
+    parse_resume_text,
+    split_skills,
+)
+from core.llm import DeepSeekClient
 from core.models import (
     Availability,
     Currency,
@@ -32,6 +40,24 @@ PERIOD_VALUES = {"年薪": "annual", "月薪": "monthly", "时薪": "hourly"}
 CURRENCY_LABELS = ["¥ 人民币 (CNY)", "HK$ 港币 (HKD)"]
 CURRENCY_VALUES = {"¥ 人民币 (CNY)": "CNY", "HK$ 港币 (HKD)": "HKD"}
 EXP_LABELS = {"年薪": "预期年薪（元）", "月薪": "预期月薪（元）", "时薪": "预期时薪（元）"}
+
+
+def coerce_int_salary(v):
+    """把薪资值规范为 int 或 None，供 number_input(value=...) 使用。
+
+    避免把 float 传给 format="%d" 的 NumberInput 触发
+    "value below has type float, but format %d displays as integer" 告警。
+    非整数值（理论不存在，薪资为整数）回退为 None。
+    """
+    if v is None:
+        return None
+    try:
+        f = float(v)
+    except (TypeError, ValueError):
+        return None
+    if f != f or f in (float("inf"), float("-inf")):  # NaN / inf 兜底
+        return None
+    return int(f) if f.is_integer() else None
 
 
 class DemoLLM:
@@ -71,7 +97,9 @@ def on_jd_text_change():
     ]
     st.session_state["jd_prefers_immediate"] = pjd["prefers_immediate"]
     st.session_state["jd_req"] = ", ".join(pjd["required_skills"])
-    st.session_state["jd_pref"] = ", ".join(pjd["preferred_skills"])
+    # 「加分技能」已改为「软技能/特质」：直接从 JD 抽取软技能/特质（本地启发式），
+    # 抓取链接场景下会被 extract_jd_meta 的 LLM 结果进一步覆盖得更准。
+    st.session_state["jd_pref"] = ", ".join(extract_soft_skills_heuristic(jd_text))
 
 
 def build_profile():
@@ -139,3 +167,63 @@ def build_jd():
         prefers_immediate=prefers,
         raw_text=raw or "",
     )
+
+
+def extract_jd_meta(text: str) -> dict:
+    """抽取 JD 元信息：职位名称 / 公司名称 / 软技能特质。
+
+    优先用 DeepSeek（已配置 Key）做自由文本理解，能识别 'financial products knowledge'
+    这类词库没有的软技能；无 Key 或调用失败则回退本地启发式
+    （parse_jd_text + extract_soft_skills_heuristic）。
+    """
+    if not text:
+        return {"title": None, "company": None, "soft_skills": []}
+    parsed = parse_jd_text(text)
+    result = {
+        "title": parsed.get("title"),
+        "company": parsed.get("company"),
+        "soft_skills": extract_soft_skills_heuristic(text),
+    }
+    try:
+        llm = DeepSeekClient()
+        if llm.available():
+            out = _extract_jd_meta_via_llm(llm, text)
+            if out.get("title"):
+                result["title"] = out["title"]
+            if out.get("company"):
+                result["company"] = out["company"]
+            if out.get("soft_skills"):
+                result["soft_skills"] = out["soft_skills"]
+    except Exception:
+        # 任何 LLM 异常都不影响主流程，保留启发式结果
+        pass
+    return result
+
+
+def _extract_jd_meta_via_llm(llm, text: str) -> dict:
+    """用 LLM 从 JD 抽取结构化元信息（JSON 容错解析）。"""
+    system = (
+        "你是招聘信息抽取助手。从 JD 文本中抽取三项信息并以 JSON 返回，不要输出多余文字。\n"
+        "字段：title(职位名称,字符串或null)、company(公司名称,字符串或null)、"
+        "soft_skills(软技能/特质列表,如 'attention to detail'、'financial products knowledge'、'沟通能力')。"
+    )
+    prompt = (
+        f"JD 原文：\n{text[:4000]}\n\n"
+        '请只返回 JSON：{"title": ..., "company": ..., "soft_skills": [...]}'
+    )
+    raw = llm.complete(prompt, system=system, temperature=0.2, max_tokens=800)
+    m = re.search(r"\{.*\}", raw, re.S)
+    if not m:
+        return {}
+    try:
+        data = json.loads(m.group(0))
+    except Exception:
+        return {}
+    soft = data.get("soft_skills") or []
+    if isinstance(soft, str):
+        soft = [soft]
+    return {
+        "title": data.get("title"),
+        "company": data.get("company"),
+        "soft_skills": [str(s).strip() for s in soft if str(s).strip()],
+    }

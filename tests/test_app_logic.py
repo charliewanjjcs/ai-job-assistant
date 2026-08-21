@@ -52,12 +52,17 @@ def test_build_profile_availability_unfilled_is_none(monkeypatch):
 
 def test_on_jd_text_change_autofills_skills_and_languages(monkeypatch):
     jd = ("任职要求：精通Python，熟悉MySQL、Redis，有Docker、Kubernetes经验者优先；"
+          "需具备 attention to detail 与团队合作能力；"
           "英语可作为工作语言，要求尽快到岗")
     _set_session(monkeypatch, {"jd_text": jd})
     m.on_jd_text_change()
     s = m.st.session_state
     assert "Python" in s["jd_req"] and "MySQL" in s["jd_req"]
-    assert "Docker" in s["jd_pref"] and "Kubernetes" in s["jd_pref"]
+    # 「加分技能」栏已改为「软技能/特质」：回填 JD 中的软技能，而非技术加分项
+    assert "attention to detail" in s["jd_pref"]
+    assert "团队合作" in s["jd_pref"]
+    # 原「加分技能」里的技术项（Docker/Kubernetes）不再进此栏
+    assert "Docker" not in s["jd_pref"]
     langs = s["jd_lang_list"]
     assert any(l["language"] == "英语" for l in langs)
     # 每条语言都带稳定 id（供前端增删而不错位）

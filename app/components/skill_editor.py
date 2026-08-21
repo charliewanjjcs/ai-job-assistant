@@ -77,7 +77,8 @@ def skill_editor(user_id: int) -> None:
     existing = _refresh_skills(user_id)
 
     if existing:
-        # 流式 chip 布局：只占左侧 3/4，右侧 1/4 留空，放不下自动换行
+        # 流式 chip 布局：只占可用区 3/4，右侧 1/4 留空，放不下自动换行
+        # （侧栏展开/收起由 columns 自适应：占「当前主区」的 3/4）
         left, _right = st.columns([3, 1])
         with left:
             with st.container(horizontal=True, gap="xsmall"):
@@ -89,11 +90,15 @@ def skill_editor(user_id: int) -> None:
     else:
         st.caption("还没有技能，下面输入并添加吧。")
 
-    st.text_input(
-        "添加技能",
-        key="skill_query",
-        placeholder="如输入 detail 可联想 detail-oriented；也可直接输入自定义技能后添加",
-    )
+    # 添加技能输入框与上下其他输入框（理想工作/性格描述/期望城市等）同宽：左半宽 [1,1]，
+    # 不使用整列铺满，左对齐、右侧留空，视觉上与相邻的文本输入框长度一致。
+    _add_wrap, _ = st.columns([1, 1])
+    with _add_wrap:
+        st.text_input(
+            "添加技能",
+            key="skill_query",
+            placeholder="输入技能名，回车或点下方添加",
+        )
     q = (st.session_state.get("skill_query") or "").strip()
     sugs = suggest_skills(q, VOCAB, existing, limit=12)
     if sugs:

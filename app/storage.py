@@ -137,6 +137,12 @@ def _verify_password(password: str, stored: str) -> bool:
 
 
 def _connect() -> sqlite3.Connection:
+    # 确保数据库目录存在（首次运行 / 被清理后）；目录不可写是「readonly database」的主因
+    _db_dir = os.path.dirname(DB_PATH)
+    try:
+        os.makedirs(_db_dir, exist_ok=True)
+    except OSError:
+        pass
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
     return conn

@@ -13,10 +13,58 @@ if ROOT not in sys.path:
     sys.path.insert(0, ROOT)
 
 import streamlit as st
+import streamlit.components.v1 as components
 
 import app.auth as auth
 import app.storage as storage
 from app.components.result_tabs import render_report
+
+# 进入分析结果页时（由「开始分析」跳转带来标志）自动收起左侧控制栏，
+# 用 JS 点击 Streamlit 侧栏的折叠按钮。多选择器 + 重试，兼容不同版本 DOM。
+# 注意：1.61 里折叠按钮 testid 在外层包裹 div 上，真正的 <button> 在其内层，故第一个选择器用后代 button。
+# 关键修复：该按钮是「展开/收起」切换键——侧栏已收起时它实为「展开」按钮，盲点会反把侧栏展开。
+# 故先读侧栏 aria-expanded：仅当为 "true"（展开态）才点击折叠；已收起（"false"）则什么都不做，
+# 保证无论点「开始分析」前侧栏是展开还是收起，跳转后都收起、绝不会误展开。
+_COLLAPSE_SIDEBAR_JS = """
+<script>
+(function () {
+  function collapse() {
+    var d = window.parent.document;
+    var side = d.querySelector('[data-testid="stSidebar"]');
+    if (!side) return false;  // 侧栏元素尚未就绪，继续重试
+    // 已收起（aria-expanded === "false"）：无需任何操作，直接结束轮询
+    if (side.getAttribute('aria-expanded') === 'false') return true;
+    // 仅展开态点击折叠按钮（命中即停轮询，避免重复点击导致二次切换）
+    var sel = [
+      '[data-testid="stSidebarCollapseButton"] button',
+      '[data-testid="stSidebarCollapseButton"]',
+      'button[aria-label*="Collapse"]'
+    ];
+    for (var i = 0; i < sel.length; i++) {
+      var el = d.querySelector(sel[i]);
+      if (el) { el.click(); return true; }
+    }
+    return false;
+  }
+  var t = 0;
+  var id = setInterval(function () {
+    if (collapse() || t++ > 30) { clearInterval(id); }
+  }, 50);
+})();
+</script>
+"""
+
+# 分析结果页布局：历史记录（左）与分隔线向左移动，左右各留约 1/20（5%）空白，
+# 使历史表格无需左右滚动看全，右侧详情占满剩余宽度。覆盖 main.py 的全局居中（max-width:75%）。
+_RESULTS_CSS = """
+<style>
+.block-container {
+  max-width: 90% !important;
+  margin-left: 5% !important;
+  margin-right: 5% !important;
+}
+</style>
+"""
 
 
 def render() -> None:
@@ -27,6 +75,12 @@ def render() -> None:
     uid = auth.current_user_id()
     st.title("分析结果")
     st.caption("选择左侧记录查看完整分析；结果会持久化保存，可随时回看。")
+    st.markdown(_RESULTS_CSS, unsafe_allow_html=True)
+
+    # 「开始分析」跳转带标志而来：进入即自动收起左侧控制栏
+    if st.session_state.get("_collapse_sidebar"):
+        st.session_state["_collapse_sidebar"] = False
+        components.html(_COLLAPSE_SIDEBAR_JS, height=0)
 
     rows = storage.list_analysis_results(uid)
     if not rows:
@@ -40,7 +94,15 @@ def render() -> None:
     if pending in ids:
         st.session_state["history_df"] = {"selection": {"rows": [ids.index(pending)]}}
 
-    col_left, col_right = st.columns([2, 3])
+    # 历史记录（左）:详情（右）= 5:5，使左侧历史表格无需左右滚动看全，右侧详情向右扩展
+    col_left, col_div, col_right = st.columns([5, 0.1, 5])
+
+    # 中缝分隔线，使左右两栏分隔明显
+    with col_div:
+        st.markdown(
+            '<div style="height: 600px; border-left: 1px solid #b9c4ab; margin: 0 auto;"></div>',
+            unsafe_allow_html=True,
+        )
 
     with col_left:
         st.subheader("历史记录")
@@ -48,9 +110,9 @@ def render() -> None:
             {
                 "职位": r["role"] or "未命名岗位",
                 "公司": r["company"] or "—",
-                "分析时间": r["generated_at"] or r["created_at"] or "—",
                 "技能匹配": (f"{r['skill_score']:.0f}分" if r["skill_score"] is not None else "—"),
                 "薪资结论": r["salary_verdict"] or "—",
+                "分析时间": r["generated_at"] or r["created_at"] or "—",
             }
             for r in rows
         ]
@@ -95,5 +157,3 @@ def render() -> None:
             st.caption(f"分析时间：{report.generated_at or row['created_at']}")
             render_report(report)
             st.divider()
-            st.markdown("**当时粘贴的 JD 原文**")
-            st.code(row["jd_text"] or "（无 JD 原文）", language=None)

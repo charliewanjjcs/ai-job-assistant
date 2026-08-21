@@ -29,7 +29,7 @@
 | 模块 | 路径 | 实现接口 | 状态 | 锁定 |
 |------|------|----------|------|------|
 | PDF 简历解析 | `modules/resume_pdf/pdf_parser.py` | `PdfResumeParser.parse(path:str) -> UserProfile`（pypdf 抽文本 + 复用 core.parsers.parse_resume_text，不修改 core） | locked | phase2 |
-| URL 读取 JD | `modules/jd_url/` | `JdSource` | planned | — |
+| URL 读取 JD | `modules/jd_url/` | `JdSource`（`UrlJdSource`：HTTP 优先 + Playwright 无头回退，复用 `core.parsers.parse_jd_text`，不修改 core） | locked | phase3 |
 | 外部薪资 API | `modules/salary_api/` | `SalaryProvider` | planned | — |
 
 ## app/（Streamlit 前端：多页面 + 本地账户 + SQLite 持久化）

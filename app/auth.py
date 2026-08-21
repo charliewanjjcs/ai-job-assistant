@@ -119,10 +119,27 @@ def login_phone(phone: str, code: str) -> int | None:
 # 登录态持久化（决策 #3：保持登录）
 # ─────────────────────────────────────────────────────────────────────────────
 def persist_login(uid: int) -> None:
-    """把当前 user_id 写入本机标记文件，供重启后自动恢复。"""
-    os.makedirs(os.path.dirname(SESSION_FILE), exist_ok=True)
-    with open(SESSION_FILE, "w", encoding="utf-8") as f:
-        json.dump({"user_id": uid}, f)
+    """把当前 user_id 写入本机标记文件，供重启后自动恢复。
+
+    写入失败（权限不足/文件被锁定/目录只读）时**不阻断登录**——
+    登录态已由 _set_session 写入 session_state，仅丢失「重启后保持登录」能力。
+    """
+    try:
+        os.makedirs(os.path.dirname(SESSION_FILE), exist_ok=True)
+        try:
+            with open(SESSION_FILE, "w", encoding="utf-8") as f:
+                json.dump({"user_id": uid}, f)
+        except PermissionError:
+            # 文件可能被旧进程/沙箱标记为只读：解除只读属性后重试一次
+            try:
+                os.chmod(SESSION_FILE, 0o666)
+                with open(SESSION_FILE, "w", encoding="utf-8") as f:
+                    json.dump({"user_id": uid}, f)
+            except OSError:
+                pass
+    except OSError:
+        # 目录无写权限等：放弃持久化，登录照常进行
+        pass
 
 
 def _clear_session_file() -> None:

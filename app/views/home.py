@@ -44,7 +44,8 @@ def _render_hero() -> None:
         .hero h1 { font-size: 3rem; margin-bottom: 0.5rem; }
         .hero .sub { color: #888; font-size: 1.1rem; }
         .steps { display: flex; gap: 1rem; justify-content: center; margin: 1.5rem 0 2rem; }
-        .step { flex: 1; max-width: 220px; background: rgba(255,255,255,0.7);
+        .step { flex: 1; max-width: 220px; margin-left: auto; margin-right: auto;
+                background: rgba(255,255,255,0.7);
                 border-radius: 12px; padding: 1rem; box-shadow: 0 2px 8px rgba(0,0,0,0.06); }
         .step .n { font-size: 1.6rem; font-weight: 700; color: #4f46e5; }
         .step .t { font-weight: 600; margin: 0.25rem 0; }
@@ -68,7 +69,7 @@ def _render_hero() -> None:
     with s2:
         st.markdown(
             """<div class="step"><div class="n">2</div><div class="t">粘贴职位 JD</div>
-            <div class="d">把招聘网页上的 JD 原文粘贴进来，自动识别必需 / 加分技能与语言要求</div></div>""",
+            <div class="d">把招聘网页上的 JD 原文粘贴进来，自动识别必需技能、软技能/特质与语言要求</div></div>""",
             unsafe_allow_html=True,
         )
     with s3:
@@ -81,6 +82,9 @@ def _render_hero() -> None:
 
 def render() -> None:
     _render_hero()
+
+    # 「完善个人资料」「开始职位分析」两个按钮整体往下移一点
+    st.markdown('<div style="height: 1.6rem"></div>', unsafe_allow_html=True)
 
     _, mid, _ = st.columns([1, 2, 1])
     with mid:

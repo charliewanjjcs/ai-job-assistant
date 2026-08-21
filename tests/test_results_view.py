@@ -57,9 +57,13 @@ def test_results_page_smoke(db):
     # 右侧详情应渲染出被默认选中的 rid2 的 role（前端）
     all_md = " ".join(str(m.value) for m in at.markdown)
     assert "前端" in all_md
-    # JD 原文回显
+    # 历史表「分析时间」应在最右列（item 9 调整）
+    df = at.dataframe[0]
+    cols = list(df.value.columns)
+    assert cols[-1] == "分析时间", f"分析时间应在最右列，实际列序={cols}"
+    # 「当时粘贴的 JD 原文」回显已移除（不再展示 JD 原文）
     all_code = " ".join(str(c.value) for c in at.code)
-    assert "JD原文B" in all_code
+    assert "JD原文B" not in all_code
 
 
 def test_results_page_empty(db):

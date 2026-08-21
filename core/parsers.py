@@ -62,7 +62,8 @@ SKILL_VOCAB: List[str] = [
     "机器学习", "machine learning", "深度学习", "deep learning", "NLP",
     "计算机视觉", "大模型", "LLM", "Prompt",
     # 办公 / 分析软件（用户点名：MS Office、Excel、PowerPoint、Power BI 等）
-    "MS Office", "Office", "Excel", "PowerPoint", "PPT", "Word",
+    "MS Office", "Microsoft Office", "Microsoft Applications", "Microsoft 365", "Office", "Excel",
+    "PowerPoint", "PPT", "Word",
     "Chinese word processing", "中文文字处理", "中文打字",
     "Outlook", "Visio", "WPS", "Access", "Tableau", "Power BI", "PowerBI", "BI",
     "SAP", "Salesforce", "ERP", "CRM",
@@ -137,7 +138,10 @@ SKILL_SYNONYMS: dict = {
 # 上下位：键为「更宽泛」的技能，值为其包含的具体组件。
 # 仅当「具体组件」作为 JD 要求、「宽泛技能」作为用户具备项（或反之）时，判为匹配。
 SKILL_SUPERSETS: dict = {
+    "Microsoft Applications": ["Office", "Microsoft Office", "MS Office", "Excel", "Word",
+                               "PowerPoint", "PPT", "Outlook", "Visio", "WPS", "Access"],
     "MS Office": ["Office", "Excel", "Word", "PowerPoint", "PPT", "Outlook", "Visio", "WPS", "Access"],
+    "Microsoft Office": ["Office", "Excel", "Word", "PowerPoint", "PPT", "Outlook", "Visio", "WPS", "Access"],
     "Office": ["Excel", "Word", "PowerPoint", "PPT", "Outlook", "Visio", "WPS", "Access"],
     "Power BI": ["BI"],
     "Adobe": ["Photoshop", "Illustrator"],
@@ -237,6 +241,49 @@ def extract_skills(text: str) -> List[str]:
         if s not in found and _token_present(text, s):
             found.append(s)
     return _dedupe_by_family(_dedupe_subsumed(found))
+
+
+def extract_soft_skills_heuristic(text: str) -> List[str]:
+    """启发式抽取 JD 中的「软技能/特质」，供「软技能/特质」栏填充。
+
+    两类来源：
+    1) 软技能词表（SOFT_SKILL_VOCAB）命中，如 attention to detail / 沟通能力；
+    2) 句式派生：knowledge of X / experience with X / familiarity with X /
+       understanding of X / proficiency in X 等，抽取 X 作为软技能短语
+       （knowledge of 类追加 ' knowledge' 后缀，契合 'financial products knowledge' 写法）。
+    仅做抽取、不润色；去重按技能族。
+    """
+    if not text:
+        return []
+    found: List[str] = []
+    # 1) 词表命中
+    for s in SOFT_SKILL_VOCAB:
+        if s not in found and _token_present(text, s):
+            found.append(s)
+    # 2) 句式派生
+    pat = re.compile(
+        r"(knowledge of|experience (?:with|in)|familiarity with|familiar with|"
+        r"understanding of|proficiency in|skills? (?:in|with|for)|expertise in|"
+        r"background in)\s+([^,;。.\n]+)",
+        re.I,
+    )
+    for m in pat.finditer(text):
+        keyword = m.group(1).lower()
+        phrase = m.group(2).strip().rstrip("。；;，, ")
+        for part in re.split(r"\s+(?:and|or|with|与|及|以及)\s+|、|，|,|\.", phrase):
+            part = part.strip().rstrip("。；;，, ")
+            part = re.sub(r"^(basic|good|strong|excellent|solid|working|proven)\s+", "", part, flags=re.I).strip()
+            if len(part) < 2 or len(part) > 50:
+                continue
+            if keyword.startswith("knowledge"):
+                candidate = part + " knowledge"
+            elif keyword.startswith("experience"):
+                candidate = part + " experience"
+            else:
+                candidate = part
+            if candidate and candidate not in found:
+                found.append(candidate)
+    return _dedupe_by_family(found)
 
 
 # 城市词表（用于抽取工作城市）
@@ -438,6 +485,30 @@ def extract_prefers_immediate(text: str) -> bool:
     ))
 
 
+def extract_job_title(text: str) -> Optional[str]:
+    """从 JD 抽取职位名称：依次尝试常见标签（职位名称/招聘岗位/Job Title…），
+    回退到「岗位/职位」标签。"""
+    if not text:
+        return None
+    for label in ("职位名称", "招聘岗位", "招聘职位", "Job Title", "Jobtitle",
+                  "Position", "职位", "岗位", "Title", "Role"):
+        v = extract_role(text, label)
+        if v:
+            return v
+    return None
+
+
+def extract_company_name(text: str) -> Optional[str]:
+    """从 JD 抽取公司名称：匹配「公司/Company/Employer/招聘公司」等标签。"""
+    if not text:
+        return None
+    for label in ("公司", "Company", "Employer", "招聘公司"):
+        v = extract_role(text, label)
+        if v:
+            return v
+    return None
+
+
 def parse_jd_text(text: str) -> dict:
     """从 JD 自由文本抽取岗位结构化字段（区分必选/加分技能 + 语言要求 + 到岗偏好）。
 
@@ -470,8 +541,8 @@ def parse_jd_text(text: str) -> dict:
                 if s not in required:
                     required.append(s)
     return {
-        "title": extract_role(text, "岗位") or extract_role(text, "职位"),
-        "company": extract_role(text, "公司"),
+        "title": extract_job_title(text),
+        "company": extract_company_name(text),
         "city": extract_city(text),
         "required_skills": required,
         "preferred_skills": preferred,

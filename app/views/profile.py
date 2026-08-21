@@ -18,8 +18,9 @@ import streamlit as st
 import app.auth as auth
 import app.storage as storage
 from app.components.lang_manager import lang_manager
+from app.components.sidebar_offset import inject_content_offset
 from app.components.skill_editor import skill_editor
-from app.state import AVAIL_OPTIONS, CURRENCY_LABELS, EXP_LABELS, PERIOD_LABELS
+from app.state import AVAIL_OPTIONS, CURRENCY_LABELS, EXP_LABELS, PERIOD_LABELS, coerce_int_salary
 from core.parsers import SKILL_VOCAB, SOFT_SKILL_VOCAB
 from modules.resume_pdf.pdf_parser import PdfResumeParser
 
@@ -34,7 +35,9 @@ def _load_profile_to_session(uid: int) -> None:
     st.session_state["city"] = p.get("city") or ""
     st.session_state["exp_period_label"] = p.get("exp_period_label") or "年薪"
     st.session_state["exp_currency_label"] = p.get("exp_currency_label") or "¥ 人民币 (CNY)"
-    st.session_state["exp_value"] = p.get("exp_value") or 0.0
+    # 预期薪资：DB 为 NULL 时保持 None（数字框初始为空、不显示 0.00）；
+    # 否则规范为 int，避免把 float 传给 format="%d" 触发告警
+    st.session_state["exp_value"] = coerce_int_salary(p.get("exp_value"))
     st.session_state["lang_list"] = p.get("lang_list") or []
     st.session_state["availability"] = p.get("availability") or "未填写"
     st.session_state["skills"] = ", ".join(storage.list_skills(uid))
@@ -48,7 +51,7 @@ def _save_profile(uid: int) -> None:
         "city": st.session_state.get("city", ""),
         "exp_period_label": st.session_state.get("exp_period_label", "年薪"),
         "exp_currency_label": st.session_state.get("exp_currency_label", "¥ 人民币 (CNY)"),
-        "exp_value": st.session_state.get("exp_value", 0.0),
+        "exp_value": st.session_state.get("exp_value"),
         "lang_list": st.session_state.get("lang_list", []),
         "availability": st.session_state.get("availability", "未填写"),
     })
@@ -62,16 +65,27 @@ def render() -> None:
         return
 
     uid = auth.current_user_id()
-    st.title("个人资料")
+    st.header("个人资料")
     st.caption("编辑并保存你的简历 / 资料，下次登录自动载入，无需重复填写。")
 
-    # 加载守卫：仅当用户切换时从 DB 覆盖一次，避免覆盖当前未保存编辑
-    if st.session_state.get("_profile_loaded_uid") != uid:
+    # 标题字符级对齐：展开时「料」（第 4 字）中心在 50%；收起时「料」中心在 40%
+    inject_content_offset(
+        expanded={"index": 3, "pct": 0.5},
+        collapsed={"index": 3, "pct": 0.4},
+        name="profile",
+    )
+
+    # 进入本页（含从别的页切换回来）时从 DB 载入一次，确保「保存后切页再回来」能看到最新值；
+    # 同页内交互（改字段 / 保存）不重复载入，保留未提交的编辑。
+    if st.session_state.get("_active_page") != "profile":
         _load_profile_to_session(uid)
-        st.session_state["_profile_loaded_uid"] = uid
+        st.session_state["_active_page"] = "profile"
 
     # 上传 PDF 简历，自动抽取并填充字段（手动字段仍优先、可改）
-    uploaded = st.file_uploader("上传简历 PDF（可选，自动填充下方字段）", type=["pdf"])
+    # 方框只覆盖按键与背景文字，不占满整行（略宽于最初 1/4 版本）
+    _up1, _up2 = st.columns([2, 2])
+    with _up1:
+        uploaded = st.file_uploader("上传简历 PDF（可选，自动填充下方字段）", type=["pdf"])
     if uploaded is not None:
         sig = f"{uploaded.name}:{uploaded.size}"
         if st.session_state.get("_pdf_last") != sig:  # 仅处理新上传，避免覆盖手动编辑
@@ -98,7 +112,7 @@ def render() -> None:
                         st.session_state["exp_period_label"] = {
                             "annual": "年薪", "monthly": "月薪", "hourly": "时薪"
                         }.get(es.period.value, "年薪")
-                        st.session_state["exp_value"] = es.value
+                        st.session_state["exp_value"] = coerce_int_salary(es.value)
                         st.session_state["exp_currency_label"] = {
                             "CNY": "¥ 人民币 (CNY)", "HKD": "HK$ 港币 (HKD)"
                         }.get(es.currency.value, "¥ 人民币 (CNY)")
@@ -114,48 +128,78 @@ def render() -> None:
                 except OSError:
                     pass
 
-    st.text_area("简历文本（粘贴）", key="resume", height=140)
+    # 简历文本（占左侧 1/2，避免侧栏收起后被拉长填满整页）
+    _c, _ = st.columns([1, 1])
+    with _c:
+        st.text_area("简历文本（粘贴）", key="resume", height=140)
+
     st.markdown("**理想工作**")
-    st.text_area(
-        "理想工作",
-        key="ideal_job", height=70,
-        placeholder="例：想要稳定、不追求高薪；或想赚得多愿意拼搏；或喜欢坐办公室/户外；"
-                    "或需要常与人沟通；或一直对着电脑数据。",
-        label_visibility="collapsed",
-    )
+    _c, _ = st.columns([1, 1])
+    with _c:
+        st.text_area(
+            "理想工作",
+            key="ideal_job", height=70,
+            placeholder="例：想要稳定、不追求高薪；或想赚得多愿意拼搏；或喜欢坐办公室/户外；"
+                        "或需要常与人沟通；或一直对着电脑数据。",
+            label_visibility="collapsed",
+        )
 
     st.markdown("**掌握的技能（个人技能库）**")
     skill_editor(uid)
 
-    st.text_input("性格描述", key="personality", placeholder="外向/内向、细心、抗压、沟通好等")
-    st.text_input("期望工作城市", key="city")
+    # 性格描述 / 期望工作城市：加粗标题 + 左半宽输入框（与技能区视觉一致）
+    st.markdown("**性格描述**")
+    _c, _ = st.columns([1, 1])
+    with _c:
+        st.text_input("性格描述", key="personality", placeholder="外向/内向、细心、抗压、沟通好等",
+                      label_visibility="collapsed")
 
-    # 预期薪资：左=计薪方式，中=纯数字金额，右=币种
+    st.markdown("**期望工作城市**")
+    _c, _ = st.columns([1, 1])
+    with _c:
+        st.text_input("期望工作城市", key="city", label_visibility="collapsed")
+
+    # 预期薪资：左=计薪方式，中=纯数字金额（初始空、保留整数），右=币种
     st.markdown("**预期薪资**")
-    ecol1, ecol2, ecol3 = st.columns(3)
-    period_label = ecol1.selectbox("计薪方式", PERIOD_LABELS, key="exp_period_label")
-    ecol2.number_input(EXP_LABELS[period_label], key="exp_value", min_value=0.0, step=1.0)
-    ecol3.selectbox("币种", CURRENCY_LABELS, key="exp_currency_label")
+    _sal_wrap, _ = st.columns([2, 1])
+    with _sal_wrap:
+        ecol1, ecol2, ecol3 = st.columns(3)
+        period_label = ecol1.selectbox("计薪方式", PERIOD_LABELS, key="exp_period_label")
+        # 把 session_state 中的薪资值规范为 int/None（DB/PDF 载入可能为 float），防兜底
+        if isinstance(st.session_state.get("exp_value"), float):
+            st.session_state["exp_value"] = coerce_int_salary(st.session_state.get("exp_value"))
+        # 关键修复：min_value/step 都用整数 → 控件进入「整数模式」，
+        # 用户输入与回填一律为 int，从根本上杜绝 format="%d" 的 float 告警
+        ecol2.number_input(EXP_LABELS[period_label], key="exp_value", min_value=0,
+                           step=1, value=None, format="%d")
+        ecol3.selectbox("币种", CURRENCY_LABELS, key="exp_currency_label")
 
-    # 语言（语言 + 3 档熟练度）
+    # 语言（语言 + 3 档熟练度），整体占左半宽
     st.markdown("**语言能力（手动选择，用于匹配 JD 语言要求）**")
-    lang_manager("lang_list", "")
+    _c, _ = st.columns([1, 1])
+    with _c:
+        lang_manager("lang_list", "")
 
-    # 到岗时间（手动选择）
+    # 到岗时间（手动选择），约占左侧 1/3，更短
     st.markdown("**到岗时间（手动选择）**")
-    st.selectbox(
-        "到岗时间",
-        ["未填写"] + AVAIL_OPTIONS,
-        key="availability",
-        label_visibility="collapsed",
-    )
+    _c, _ = st.columns([1, 2])
+    with _c:
+        st.selectbox(
+            "到岗时间",
+            ["未填写"] + AVAIL_OPTIONS,
+            key="availability",
+            label_visibility="collapsed",
+        )
 
-    c1, c2 = st.columns([1, 2])
-    if c1.button("保存资料", type="primary", use_container_width=True):
-        _save_profile(uid)
-        st.success("资料已保存到本机。")
-    if c2.button("重新载入已保存资料", use_container_width=True):
-        st.session_state.pop("_profile_loaded_uid", None)
-        _load_profile_to_session(uid)
-        st.session_state["_profile_loaded_uid"] = uid
-        st.rerun()
+    # 「保存资料」与「重新载入已保存资料」同一行、等长（两者长度一致）
+    _btns, _ = st.columns([1, 1])
+    with _btns:
+        c1, c2 = st.columns([1, 1])
+        if c1.button("保存资料", type="primary", use_container_width=True):
+            _save_profile(uid)
+            st.success("资料已保存到本机。")
+        if c2.button("重新载入已保存资料", use_container_width=True):
+            # 置空 _active_page，使下次渲染在「widget 实例化之前」于脚本顶部重新载入，
+            # 避免「widget 实例化后改 session_state」报错（同之前的 skill_query 修复思路）
+            st.session_state["_active_page"] = None
+            st.rerun()
