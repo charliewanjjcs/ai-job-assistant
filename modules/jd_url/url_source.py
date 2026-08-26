@@ -41,6 +41,40 @@ _USER_AGENT = (
     "(KHTML, like Gecko) Chrome/120.0 Safari/537.36"
 )
 
+# 更完整的请求头，降低被站点按「空 UA / 非浏览器」直接拒掉的概率
+_HEADERS = {
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
+    "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
+    "Accept-Encoding": "gzip, deflate, br",
+    "Connection": "keep-alive",
+    "Upgrade-Insecure-Requests": "1",
+    "Sec-Fetch-Dest": "document",
+    "Sec-Fetch-Mode": "navigate",
+    "Sec-Fetch-Site": "none",
+    "Sec-Fetch-User": "?1",
+}
+# 反爬 / JS 挑战页特征：命中即视为抓取失败，直接走回退/报错
+_BLOCKED_MARKERS = (
+    "enable javascript", "enable your javascript", "verify you are human",
+    "checking your browser", "just a moment", "confirm you are human",
+    "security check", "ddos protection", "cf-chl", "are you a robot",
+    "人机验证", "请开启 javascript", "请启用 javascript", "浏览器检查",
+)
+_GOOGLEBOT_UA = (
+    "Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)"
+)
+
+
+def _is_blocked_page(html: str) -> bool:
+    """页面是否为反爬挑战页 / JS 空壳（无可用正文）。"""
+    if not html:
+        return True
+    low = html.lower()
+    if any(m in low for m in _BLOCKED_MARKERS):
+        return True
+    # 抽出的可见正文极少（基本是空壳/挑战页）也视为失败
+    return len(_html_to_text(html)) < 50
+
 
 class _TextExtractor(HTMLParser):
     """从 HTML 抽取可见正文文本。
@@ -168,7 +202,7 @@ def _select_jd_region(text: str) -> str:
 class UrlJdSource(JdSource):
     """从 JD 链接抓取并解析为 JdInfo（HTTP 优先 + Playwright 回退）。"""
 
-    def __init__(self, min_text: int = _HTML_MIN_TEXT, timeout: float = 15.0) -> None:
+    def __init__(self, min_text: int = _HTML_MIN_TEXT, timeout: float = 20.0) -> None:
         self.min_text = min_text
         self.timeout = timeout
 
@@ -194,7 +228,10 @@ class UrlJdSource(JdSource):
                     text = candidate
 
         if not text:
-            raise RuntimeError(f"无法从链接读取 JD 内容，请检查链接或改用文本粘贴：{url}")
+            raise RuntimeError(
+                f"无法从链接读取 JD 内容（该站点可能启用了反爬或需要 JavaScript 渲染）。"
+                f"请检查链接，或直接粘贴 JD 文本：{url}"
+            )
 
         parsed = parse_jd_text(text)
         return JdInfo(
@@ -219,16 +256,27 @@ class UrlJdSource(JdSource):
 
     # ── 内部：HTTP 优先 ─────────────────────────────────────────
     def _fetch_html(self, url: str) -> Optional[str]:
-        """HTTP GET 抓取 HTML；失败或 4xx/5xx 返回 None。"""
+        """HTTP GET 抓取 HTML；失败 / 4xx-5xx / 反爬挑战页 均返回 None。
+
+        先普通浏览器 UA；若被测为反爬页/空壳，再用 Googlebot UA 重试一次
+        （部分站点对爬虫 UA 返回不同内容）。两路都拿不到可用正文则返回 None。
+        """
         if requests is None:
             return None
-        try:
-            resp = requests.get(url, headers={"User-Agent": _USER_AGENT}, timeout=self.timeout)
+        for ua in (_USER_AGENT, _GOOGLEBOT_UA):
+            try:
+                resp = requests.get(
+                    url, headers={**_HEADERS, "User-Agent": ua}, timeout=self.timeout
+                )
+            except Exception:
+                continue
             if resp.status_code >= 400:
-                return None
-            return resp.text
-        except Exception:
-            return None
+                continue
+            html = resp.text or ""
+            if _is_blocked_page(html):
+                continue
+            return html
+        return None
 
     # ── 内部：Playwright 回退 ────────────────────────────────────
     def _fetch_with_playwright(self, url: str) -> Optional[str]:

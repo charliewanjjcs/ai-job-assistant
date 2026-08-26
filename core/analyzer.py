@@ -38,7 +38,7 @@ class CoreAnalyzer(Analyzer):
 
         # 2) 能力匹配 + 提升建议
         skill_match = SkillMatcher.match(profile, jd)
-        personality_match = PersonalityMatcher.match(profile, jd)
+        personality_match = PersonalityMatcher(llm=self.llm).match(profile, jd)
         language_match = LanguageMatcher.match(profile, jd)
         availability_match = AvailabilityMatcher.match(profile, jd)
         improvements = build_improvements(

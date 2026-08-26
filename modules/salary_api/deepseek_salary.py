@@ -17,6 +17,7 @@ from typing import Optional, Tuple
 from core.llm import DeepSeekClient
 from core.models import Currency, JdInfo, PayPeriod, SalaryAmount
 from core.salary import RuleBasedSalaryProvider
+from .salary_grounding import get_salary_context
 
 
 class DeepSeekSalaryProvider(RuleBasedSalaryProvider):
@@ -41,8 +42,11 @@ class DeepSeekSalaryProvider(RuleBasedSalaryProvider):
         context = ""
         if jd_text:
             context = f"\nJD 摘要（含职级、经验年限、行业、职责）：\n{jd_text[:1500]}"
+        # 真实薪资基准（联网检索 + 参考表），作为校准锚点注入提示词
+        grounding = get_salary_context(role, city)
         prompt = (
             f"岗位：{role}\n城市：{city or '未指定'}{context}\n\n"
+            f"{grounding}\n\n"
             "请综合「职级（如 Vice President / 总监 / 经理 / 初级）、经验年限、行业（如私人银行 / 投行 / 科技）"
             "」判断薪资水平：高职级、多年经验、金融等高薪行业的岗位，年化薪资要显著高于初级岗位，"
             "不要只按岗位名低估（例如 Vice President 级别通常远超月薪 2-3 万）。\n"

@@ -98,6 +98,21 @@ def render_availability(r):
         st.write(am.note)
 
 
+def render_personality(r):
+    pm = r.personality_match
+    if pm is None:
+        st.write("—")
+        return
+    st.subheader(f"性格与动机匹配度：{pm.score}/100")
+    if pm.summary:
+        st.write(pm.summary)
+    for d in pm.dimensions:
+        line = f"**{d.name}：** 匹配度 {d.fit}"
+        if d.note:
+            line += f" —— {d.note}"
+        st.write(line)
+
+
 def render_improve(r):
     st.subheader("提升建议")
     for s in r.improvement_suggestions:
@@ -128,9 +143,9 @@ def render_interview(r):
 
 
 def render_report(report, demo: bool = False):
-    """用 8 个标签页渲染完整分析报告。"""
+    """用 9 个标签页渲染完整分析报告。"""
     tabs = st.tabs([
-        "薪资匹配", "能力匹配", "语言匹配", "到岗匹配",
+        "薪资匹配", "能力匹配", "语言匹配", "到岗匹配", "性格匹配",
         "提升建议", "岗位前景", "日常工作", "面试问题",
     ])
     with tabs[0]:
@@ -142,10 +157,12 @@ def render_report(report, demo: bool = False):
     with tabs[3]:
         render_availability(report)
     with tabs[4]:
-        render_improve(report)
+        render_personality(report)
     with tabs[5]:
-        render_career(report)
+        render_improve(report)
     with tabs[6]:
-        render_daily(report)
+        render_career(report)
     with tabs[7]:
+        render_daily(report)
+    with tabs[8]:
         render_interview(report)

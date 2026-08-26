@@ -247,3 +247,65 @@ def test_fetch_with_playwright_swallows_teardown_error(source, monkeypatch):
     monkeypatch.setattr(_urlmod, "sync_playwright", lambda: _FakePW("职位：测试工程师"))
     out = source._fetch_with_playwright("https://example.com/job")
     assert out == "职位：测试工程师"
+
+
+# ===== 10. HTTP 抓取：反爬/挑战页识别为失败（返回 None） =====
+class _FakeResp:
+    def __init__(self, text, status=200):
+        self.text = text
+        self.status_code = status
+
+
+class _FakeRequests:
+    def __init__(self, resp):
+        self._resp = resp
+        self.last_headers = None
+
+    def get(self, url, headers=None, timeout=None):
+        self.last_headers = headers
+        return self._resp
+
+
+def test_fetch_html_returns_none_on_blocked_page(source, monkeypatch):
+    blocked = "<html><body>enable JavaScript to continue. verify you are human</body></html>"
+    monkeypatch.setattr(_urlmod, "requests", _FakeRequests(_FakeResp(blocked)))
+    assert source._fetch_html("https://hk.jobsdb.com/job/1") is None
+
+
+def test_fetch_html_returns_html_on_normal_page(source, monkeypatch):
+    monkeypatch.setattr(_urlmod, "requests", _FakeRequests(_FakeResp(SAMPLE_HTML)))
+    assert source._fetch_html("https://example.com/job") == SAMPLE_HTML
+
+
+def test_fetch_html_googlebot_retry_on_blocked(source, monkeypatch):
+    """第一个 UA 命中反爬页时，应换 Googlebot UA 重试并成功。"""
+    normal = (
+        "<html><body><h1>岗位：后端工程师</h1>"
+        "<p>负责服务端架构设计与开发，参与核心系统性能优化；精通 Python、MySQL、Redis；"
+        "熟悉 Docker、Kubernetes；具备 5 年以上后端开发经验，有高并发系统经验者优先。</p>"
+        "</body></html>"
+    )
+
+    class _UARequests:
+        def __init__(self):
+            self.calls = 0
+
+        def get(self, url, headers=None, timeout=None):
+            self.calls += 1
+            if self.calls == 1:
+                return _FakeResp("<html>enable javascript</html>")  # 第一次被反爬
+            return _FakeResp(normal)
+
+    fake = _UARequests()
+    monkeypatch.setattr(_urlmod, "requests", fake)
+    out = source._fetch_html("https://example.com/job")
+    assert out == normal
+    assert fake.calls == 2  # 普通 UA 失败 + Googlebot 重试
+
+
+def test_fetch_raises_when_http_blocked_and_pw_fails(source, monkeypatch):
+    blocked = "<html>verify you are human</html>"
+    monkeypatch.setattr(_urlmod, "requests", _FakeRequests(_FakeResp(blocked)))
+    monkeypatch.setattr(UrlJdSource, "_fetch_with_playwright", lambda self, url: None)
+    with pytest.raises(RuntimeError):
+        source.fetch("https://hk.jobsdb.com/job/1")

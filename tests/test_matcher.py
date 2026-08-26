@@ -66,9 +66,36 @@ def test_improvements_generated():
 
 
 def test_personality_match():
-    r = PersonalityMatcher.match(_profile(["x"]), _jd(["x"]))
-    assert r.score >= 0
-    assert len(r.dimensions) > 0
+    # 无 LLM 时回退占位逻辑（score=60，3 个维度）
+    r = PersonalityMatcher().match(_profile(["x"]), _jd(["x"]))
+    assert r.score == 60.0
+    assert len(r.dimensions) == 3
+
+
+def test_personality_match_llm():
+    """有 LLM 时走 LLM 路径，返回结构化 PersonalityMatchResult。"""
+    class _FakeLLM:
+        def available(self):
+            return True
+
+        def complete(self, prompt, system="", temperature=0.7, max_tokens=1500):
+            return (
+                '{"score": 82, "summary": "外向且求稳，与该岗位高度契合", '
+                '"dimensions": [{"name": "沟通协作", "fit": "高", '
+                '"note": "外向型适合频繁沟通"}, {"name": "稳定性", "fit": "高", '
+                '"note": "求稳与该岗位稳定性质匹配"}]}'
+            )
+
+    r = PersonalityMatcher(llm=_FakeLLM()).match(
+        UserProfile(personality="外向、善于沟通", ideal_job="稳定朝九晚五"),
+        JdInfo(title="HR Officer", raw_text="需频繁与候选人沟通，团队稳定"),
+    )
+    assert r.score == 82
+    assert "外向" in r.summary
+    names = [d.name for d in r.dimensions]
+    assert "沟通协作" in names
+    assert "稳定性" in names
+    assert r.dimensions[0].fit == "高"
 
 
 def test_language_match():

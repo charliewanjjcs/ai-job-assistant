@@ -1,9 +1,14 @@
 """技能/性格匹配 + 提升建议（规则版，可单测）。
 
-Phase 1 用规则匹配；后续可把 PersonalityMatcher 升级为 LLM 驱动（接口不变）。
+- SkillMatcher / LanguageMatcher / AvailabilityMatcher 仍为规则版。
+- PersonalityMatcher 已升级为「LLM 驱动」：用 profile.personality(性格描述) +
+  profile.ideal_job(理想工作) 对比 JD，输出匹配分 + 维度级理由；无 LLM/Key 时回退占位逻辑。
+  接口（match(profile, jd) -> PersonalityMatchResult）不变。
 """
 from __future__ import annotations
 
+import json
+import re
 from typing import List, Optional
 
 from .models import (
@@ -77,9 +82,60 @@ class SkillMatcher:
 
 
 class PersonalityMatcher:
+    def __init__(self, llm=None):
+        self.llm = llm
+
+    def match(self, profile: UserProfile, jd: JdInfo) -> PersonalityMatchResult:
+        """LLM 驱动匹配；无 LLM 或调用失败则回退占位逻辑。"""
+        if self.llm is not None and getattr(self.llm, "available", lambda: True)():
+            try:
+                return self._match_via_llm(profile, jd)
+            except Exception:
+                pass
+        return self._match_fallback(profile, jd)
+
+    def _match_via_llm(self, profile: UserProfile, jd: JdInfo) -> PersonalityMatchResult:
+        system = (
+            "你是职业性格与动机匹配顾问。根据用户填写的「性格描述」与「理想工作」，"
+            "对比岗位 JD，从多个维度判断人岗匹配度，并给出可解释的匹配理由。"
+            "只返回 JSON，不要任何解释或多余文字。"
+        )
+        prompt = (
+            f"用户性格描述：{profile.personality or '未填写'}\n"
+            f"用户理想工作：{profile.ideal_job or '未填写'}\n"
+            f"应聘岗位：{jd.title or '未指定'}\n"
+            f"岗位 JD 摘要：\n{jd.raw_text[:3000]}\n\n"
+            "请输出 JSON：\n"
+            '{"score": 0-100 的整数匹配度, '
+            '"summary": "一句总体匹配结论", '
+            '"dimensions": [{"name": "维度名(如 沟通协作/稳定性/工作节奏/价值认同)", '
+            '"fit": "高"或"中"或"低", "note": "匹配理由(结合性格/理想工作与岗位)"}]}\n'
+            "维度应包含：沟通协作、稳定性(是否求稳)、工作节奏、价值认同等，至少 3 个。"
+        )
+        raw = self.llm.complete(prompt, system=system, temperature=0.3, max_tokens=800)
+        m = re.search(r"\{.*\}", raw, re.S)
+        if not m:
+            raise ValueError("LLM 未返回 JSON")
+        data = json.loads(m.group(0))
+        dims = [
+            PersonalityDimension(
+                name=str(d.get("name", "")),
+                fit=str(d.get("fit", "中")),
+                note=str(d.get("note", "")) or None,
+            )
+            for d in (data.get("dimensions") or [])
+            if d.get("name")
+        ]
+        score = float(data.get("score", 0))
+        return PersonalityMatchResult(
+            summary=str(data.get("summary", "")),
+            dimensions=dims,
+            score=score,
+        )
+
     @staticmethod
-    def match(profile: UserProfile, jd: JdInfo) -> PersonalityMatchResult:
-        # MVP：通用维度初步匹配；详细匹配建议后续用 LLM 增强（接口不变）。
+    def _match_fallback(profile: UserProfile, jd: JdInfo) -> PersonalityMatchResult:
+        # MVP：通用维度初步匹配（无 LLM/Key 时回退）。
         dims = [
             PersonalityDimension(name="沟通协作", fit="中", note="建议结合简历项目经历判断"),
             PersonalityDimension(name="抗压能力", fit="中", note="可由面试表现验证"),

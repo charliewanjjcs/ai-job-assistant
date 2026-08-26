@@ -232,3 +232,44 @@ def test_tighten_passes_jd_text_through():
     assert llm.prompts and "10+ years" in llm.prompts[0]
     # 收窄后中点保持 100w，宽度按职级 0.15 浮动
     assert abs((low + high) / 2 - 1000000) < 2000
+
+
+# ── 8. 薪资 grounding：参考表命中（含英文岗位名）────────────────────────────
+def test_salary_context_reference_table_hr():
+    # 英文岗位名 "Assistant Human Resources Officer" 应匹配「人力资源」族（而非通用）
+    from modules.salary_api.salary_grounding import get_salary_context
+    ctx = get_salary_context("Assistant Human Resources Officer", "上海")
+    assert "人力资源" in ctx, "英文 HR 岗位应命中人力资源族"
+    assert "150,000" in ctx, "一线城市 HR 年化下限应约 15 万"
+    assert "月薪约" in ctx
+
+
+def test_salary_context_falls_back_to_default_for_unknown():
+    from modules.salary_api.salary_grounding import get_salary_context
+    ctx = get_salary_context("完全不存在的岗位XYZ", "上海")
+    assert "通用" in ctx
+
+
+def test_salary_context_includes_web_search_when_available(monkeypatch):
+    # 联网检索返回的摘要应被拼进上下文
+    from modules.salary_api import salary_grounding
+    monkeypatch.setattr(
+        salary_grounding, "search_web_salary",
+        lambda role, city, timeout=5.0: "某招聘平台显示该岗位月薪约 18000 元",
+    )
+    ctx = salary_grounding.get_salary_context("Assistant Human Resources Officer", "上海")
+    assert "18000" in ctx
+
+
+def test_deepseek_prompt_includes_grounding(monkeypatch):
+    # 薪资提示词应注入真实薪资基准锚点（取代纯拍脑袋）
+    from modules.salary_api import salary_grounding
+    monkeypatch.setattr(salary_grounding, "search_web_salary", lambda *a, **k: None)  # 离线，仅用参考表
+    llm = _PromptCapturingLLM('{"low": 180000, "high": 260000}')
+    provider = DeepSeekSalaryProvider(llm=llm)
+    low, high = provider.estimate_market_range("Assistant Human Resources Officer", "上海")
+    assert (low, high) == (180000.0, 260000.0)
+    assert llm.prompts, "LLM 应被调用"
+    prompt = llm.prompts[0]
+    assert "参考薪资基准" in prompt, "提示词应含 grounding 锚点"
+    assert "人力资源" in prompt, "锚点应标识岗位族"

@@ -158,3 +158,26 @@ def test_detail_title_role_and_company_on_separate_lines(db):
     assert "#### 后端开发工程师" in md
     assert "##### 测试科技有限公司" in md
     assert "@" not in md
+
+
+def test_render_personality_tab():
+    """新增「性格匹配」栏目应渲染匹配分 + 维度理由。"""
+    script = """
+import streamlit as st
+from app.components.result_tabs import render_personality
+from core.models import Report, PersonalityMatchResult, PersonalityDimension
+r = Report(personality_match=PersonalityMatchResult(
+    score=85, summary="外向且求稳，匹配良好",
+    dimensions=[PersonalityDimension(name="沟通协作", fit="高", note="外向匹配频繁沟通"),
+                PersonalityDimension(name="稳定性", fit="高", note="求稳匹配")]))
+render_personality(r)
+"""
+    at = AppTest.from_string(script, default_timeout=20)
+    at.run()
+    assert not at.exception
+    md = " ".join(str(m.value) for m in at.markdown)
+    # subheader 不进 at.markdown（与其它 tab 一致），故断言 write 出的正文与维度
+    assert "外向且求稳，匹配良好" in md
+    assert "沟通协作" in md
+    assert "稳定性" in md
+    assert "外向匹配频繁沟通" in md
