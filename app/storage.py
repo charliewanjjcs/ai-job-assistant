@@ -19,8 +19,9 @@ if ROOT not in sys.path:
     sys.path.insert(0, ROOT)
 DEFAULT_DB = os.path.join(ROOT, "data", "app.db")
 
-# 模块级可覆盖的数据库路径（测试用）
-DB_PATH = DEFAULT_DB
+# 模块级可覆盖的数据库路径（测试用 set_db_path 覆盖；部署时用环境变量 APP_DB_PATH 覆盖，
+# 指向持久卷或外部存储，避免云平台重启/重新部署丢数据）
+DB_PATH = os.getenv("APP_DB_PATH", DEFAULT_DB)
 
 from core.models import Report  # noqa: E402
 
@@ -143,8 +144,15 @@ def _connect() -> sqlite3.Connection:
         os.makedirs(_db_dir, exist_ok=True)
     except OSError:
         pass
-    conn = sqlite3.connect(DB_PATH)
+    # timeout：等待锁的最长秒数，避免多用户并发写时立即抛 "database is locked"
+    conn = sqlite3.connect(DB_PATH, timeout=10)
     conn.row_factory = sqlite3.Row
+    # WAL + busy_timeout：多用户并发时读不阻塞写、写不阻塞读，进一步降低写锁冲突
+    try:
+        conn.execute("PRAGMA journal_mode=WAL")
+        conn.execute("PRAGMA busy_timeout=5000")
+    except sqlite3.DatabaseError:
+        pass
     return conn
 
 

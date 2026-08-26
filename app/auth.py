@@ -1,12 +1,15 @@
 """登录态编排层（依赖 storage + streamlit.session_state）。
 
 本地模拟账户：微信/QQ/谷歌/手机号走 get_or_create_user 落到本机 user 行（不接真实 OAuth）；
-邮箱走真实密码哈希。登录态存于 session_state["user_id"] / ["user_display"]，
-并通过 data/session.json 持久化（决策 #3：保持登录，重启自动恢复）。
+邮箱走真实密码哈希。登录态存于 session_state["user_id"] / ["user_display"]。
+
+部署适配（多用户）：**不再写全局 data/session.json**。原「单文件记录最后登录用户」的机制
+在多用户并发下会把 A 用户刷新后错误恢复成 B 用户（串号）。登录态仅存 session_state
+（每个浏览器会话独立，Streamlit 按浏览器 session 持久化，刷新页面不丢；
+服务重启/应用休眠后需重新登录，这是多用户安全的必要取舍）。
 """
 from __future__ import annotations
 
-import json
 import os
 import random
 
@@ -14,8 +17,6 @@ import streamlit as st
 
 import app.storage as storage
 
-# 本机会话持久化文件
-SESSION_FILE = os.path.join(storage.ROOT, "data", "session.json")
 # 开发模式：发送验证码时在界面显示明文，便于联调
 DEV_MODE = os.getenv("APP_DEV", "0") == "1"
 # 固定测试/演示验证码（自动化与本地演示用）
@@ -52,9 +53,6 @@ def require_login() -> int:
 def logout() -> None:
     st.session_state.pop("user_id", None)
     st.session_state.pop("user_display", None)
-    # 标记本次会话已主动退出：即使 session.json 因文件锁删除失败，也不在本会话自动恢复
-    st.session_state["_logged_out"] = True
-    _clear_session_file()
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -63,7 +61,6 @@ def logout() -> None:
 def _set_session(uid: int, display: str) -> None:
     st.session_state["user_id"] = uid
     st.session_state["user_display"] = display
-    persist_login(uid)
 
 
 def login_provider(provider: str, provider_user_id: str | None = None,
@@ -116,65 +113,16 @@ def login_phone(phone: str, code: str) -> int | None:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# 登录态持久化（决策 #3：保持登录）
+# 登录态持久化（部署适配：多用户安全）
+# 不再使用全局 data/session.json（单文件记录「最后登录用户」会导致多用户串号）。
+# 登录态仅存 session_state，Streamlit 按浏览器 session 持久化（刷新不丢、多用户隔离）。
+# 保留以下空实现，避免 main.py / 历史调用处 import 报错。
 # ─────────────────────────────────────────────────────────────────────────────
 def persist_login(uid: int) -> None:
-    """把当前 user_id 写入本机标记文件，供重启后自动恢复。
-
-    写入失败（权限不足/文件被锁定/目录只读）时**不阻断登录**——
-    登录态已由 _set_session 写入 session_state，仅丢失「重启后保持登录」能力。
-    """
-    try:
-        os.makedirs(os.path.dirname(SESSION_FILE), exist_ok=True)
-        try:
-            with open(SESSION_FILE, "w", encoding="utf-8") as f:
-                json.dump({"user_id": uid}, f)
-        except PermissionError:
-            # 文件可能被旧进程/沙箱标记为只读：解除只读属性后重试一次
-            try:
-                os.chmod(SESSION_FILE, 0o666)
-                with open(SESSION_FILE, "w", encoding="utf-8") as f:
-                    json.dump({"user_id": uid}, f)
-            except OSError:
-                pass
-    except OSError:
-        # 目录无写权限等：放弃持久化，登录照常进行
-        pass
-
-
-def _clear_session_file() -> None:
-    try:
-        if os.path.exists(SESSION_FILE):
-            os.remove(SESSION_FILE)
-    except OSError:
-        # 删除失败（Windows 下文件可能被短暂锁定）：退化为清空内容，避免下次被自动恢复
-        try:
-            with open(SESSION_FILE, "w", encoding="utf-8") as f:
-                json.dump({}, f)
-        except OSError:
-            pass
+    """（已废弃）不再写全局 session.json。登录态由 _set_session 写入 session_state。"""
+    return
 
 
 def try_restore_login() -> None:
-    """在应用启动时调用：若当前会话未登录且本机有有效标记，则恢复登录态。
-
-    注意：必须在脚本运行期（页面渲染/run_app）调用，不能在模块导入期调用。
-    """
-    if st.session_state.get("user_id"):
-        return
-    if st.session_state.get("_logged_out"):
-        return  # 用户本次会话主动退出，不自动恢复
-    if not os.path.exists(SESSION_FILE):
-        return
-    try:
-        with open(SESSION_FILE, "r", encoding="utf-8") as f:
-            data = json.load(f)
-        uid = data.get("user_id")
-        if uid is None:
-            return
-        u = storage.get_user(uid)
-        if u:
-            st.session_state["user_id"] = uid
-            st.session_state["user_display"] = u.get("display_name") or ""
-    except (OSError, json.JSONDecodeError):
-        pass
+    """（已废弃）不再从全局 session.json 恢复，避免多用户串号。"""
+    return

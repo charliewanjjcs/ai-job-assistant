@@ -99,7 +99,8 @@ def run_app() -> None:
     storage.init_db()  # 首次运行即建表（幂等），否则登录会报 no such table
     st.set_page_config(page_title="AI 求职助手", layout="wide")
     _inject_global_style()
-    auth.try_restore_login()  # 决策 #3：重启后自动恢复登录态
+    # 部署适配：登录态仅存 session_state（每个浏览器会话独立、多用户不串），
+    # 不再从全局 data/session.json 恢复（单文件恢复会串号）。
 
     # 侧边栏：登录区在上，导航链接在下（position="hidden" 下需手动渲染导航）
     with st.sidebar:

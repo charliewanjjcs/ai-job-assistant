@@ -1,6 +1,8 @@
 # ===== 密钥 =====
 config/.env
 .env
+# Streamlit Cloud secrets（真实 Key 不入库；模板 .example 才入库）
+.streamlit/secrets.toml
 
 # ===== 沙盒（测试数据/缓存，不入库）=====
 sandbox/
