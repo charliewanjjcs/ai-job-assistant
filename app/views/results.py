@@ -97,12 +97,12 @@ def render() -> None:
 
     rows = storage.list_analysis_results(uid)
     if not rows:
-        st.info("还没有分析结果。去「职位分析」页粘贴 JD 开始第一次分析吧。")
+        st.info("还没有分析结果。去「职位详情/JD」页粘贴 JD 开始第一次分析吧。")
         return
 
     ids = [r["id"] for r in rows]  # 与表格行顺序一一对应（位置索引映射）
 
-    # 「职位分析」跳转带来的“刚分析记录”默认选中（读后即清，避免覆盖用户后续手选）
+    # 「职位详情/JD」页跳转带来的“刚分析记录”默认选中（读后即清，避免覆盖用户后续手选）
     pending = st.session_state.pop("_pending_result_id", None)
     if pending in ids:
         st.session_state["history_df"] = {"selection": {"rows": [ids.index(pending)]}}
