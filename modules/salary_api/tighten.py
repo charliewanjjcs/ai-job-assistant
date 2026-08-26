@@ -62,9 +62,9 @@ class TightenedSalaryProvider(SalaryProvider):
         self.base = base
 
     def estimate_market_range(
-        self, role: str, city: Optional[str] = None
+        self, role: str, city: Optional[str] = None, jd_text: Optional[str] = None
     ) -> Tuple[Optional[float], Optional[float]]:
-        low, high = self.base.estimate_market_range(role, city)
+        low, high = self.base.estimate_market_range(role, city, jd_text)
         return tighten_market_range(low, high, role)
 
     def get_company_offer(self, jd: JdInfo) -> Optional[SalaryAmount]:

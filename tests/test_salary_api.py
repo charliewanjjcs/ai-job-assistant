@@ -190,3 +190,45 @@ def test_seniority_spread_bounds():
     assert seniority_spread("实习生前端的") == 0.10
     assert seniority_spread("资深后端专家") == 0.15
     assert seniority_spread("后端开发") == 0.12
+
+
+class _PromptCapturingLLM:
+    """记录 prompt 的假 LLM，用于断言薪资估算把 JD 上下文（职级/经验/行业）传给模型。"""
+
+    def __init__(self, result):
+        self._result = result
+        self.prompts = []
+
+    def available(self):
+        return True
+
+    def complete(self, prompt, system="", temperature=0.7, max_tokens=1500):
+        self.prompts.append(prompt)
+        return self._result
+
+
+def test_llm_estimate_uses_jd_context():
+    # 高职位级（VP）岗位的薪资估算必须把完整 JD（职级/经验/行业）传给 LLM，
+    # 避免只凭岗位名「Vice President」低估为月薪 2-3 万。
+    llm = _PromptCapturingLLM('{"low": 800000, "high": 1200000}')
+    provider = DeepSeekSalaryProvider(llm=llm)
+    jd_text = "Vice President, Private Banking. 8-10 years of experience in wealth management."
+    low, high = provider.estimate_market_range("Vice President", "香港", jd_text)
+    assert (low, high) == (800000.0, 1200000.0)
+    # prompt 应包含完整 JD 上下文（职级 + 经验年限 + 行业）
+    assert llm.prompts, "LLM 应被调用"
+    prompt = llm.prompts[0]
+    assert "Vice President" in prompt
+    assert "8-10 years" in prompt
+    assert "Private Banking" in prompt
+
+
+def test_tighten_passes_jd_text_through():
+    # TightenedSalaryProvider 应把 jd_text 透传给底层 provider
+    llm = _PromptCapturingLLM('{"low": 800000, "high": 1200000}')
+    provider = TightenedSalaryProvider(DeepSeekSalaryProvider(llm=llm))
+    jd_text = "Director, 10+ years experience."
+    low, high = provider.estimate_market_range("Director", "上海", jd_text)
+    assert llm.prompts and "10+ years" in llm.prompts[0]
+    # 收窄后中点保持 100w，宽度按职级 0.15 浮动
+    assert abs((low + high) / 2 - 1000000) < 2000

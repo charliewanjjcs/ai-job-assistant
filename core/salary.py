@@ -117,7 +117,7 @@ class RuleBasedSalaryProvider(SalaryProvider):
     TIER2 = ("成都", "武汉", "西安", "南京", "苏州", "重庆", "天津")
 
     def estimate_market_range(
-        self, role: str, city: Optional[str] = None
+        self, role: str, city: Optional[str] = None, jd_text: Optional[str] = None
     ) -> Tuple[Optional[float], Optional[float]]:
         base = None
         if role:

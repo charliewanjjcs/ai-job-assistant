@@ -31,13 +31,21 @@ class DeepSeekSalaryProvider(RuleBasedSalaryProvider):
         return bool(getattr(self.llm, "available", lambda: True)())
 
     # ── 内部：调用 LLM 返回 (low, high) ────────────────────────────────────
-    def _estimate_via_llm(self, role: str, city: Optional[str]) -> Tuple[float, float]:
+    def _estimate_via_llm(
+        self, role: str, city: Optional[str], jd_text: Optional[str] = None
+    ) -> Tuple[float, float]:
         system = (
-            "你是资深薪酬数据专家。根据岗位与城市，估计该岗位在中国的年化薪资市场区间"
-            "（人民币元/年，指含奖金的总包年薪）。只返回 JSON，不要任何解释或多余文字。"
+            "你是资深薪酬数据专家。根据岗位、城市与 JD 完整信息，估计该岗位在中国的"
+            "年化薪资市场区间（人民币元/年，指含奖金的总包年薪）。只返回 JSON，不要任何解释或多余文字。"
         )
+        context = ""
+        if jd_text:
+            context = f"\nJD 摘要（含职级、经验年限、行业、职责）：\n{jd_text[:1500]}"
         prompt = (
-            f"岗位：{role}\n城市：{city or '未指定'}\n\n"
+            f"岗位：{role}\n城市：{city or '未指定'}{context}\n\n"
+            "请综合「职级（如 Vice President / 总监 / 经理 / 初级）、经验年限、行业（如私人银行 / 投行 / 科技）"
+            "」判断薪资水平：高职级、多年经验、金融等高薪行业的岗位，年化薪资要显著高于初级岗位，"
+            "不要只按岗位名低估（例如 Vice President 级别通常远超月薪 2-3 万）。\n"
             '请只返回 JSON：{"low": 年化下限(元), "high": 年化上限(元)}'
         )
         raw = self.llm.complete(prompt, system=system, temperature=0.2, max_tokens=200)
@@ -53,15 +61,15 @@ class DeepSeekSalaryProvider(RuleBasedSalaryProvider):
 
     # ── 实现 SalaryProvider.estimate_market_range ─────────────────────────
     def estimate_market_range(
-        self, role: str, city: Optional[str] = None
+        self, role: str, city: Optional[str] = None, jd_text: Optional[str] = None
     ) -> Tuple[Optional[float], Optional[float]]:
         if not role or not self._llm_available():
-            return super().estimate_market_range(role, city)
+            return super().estimate_market_range(role, city, jd_text)
         try:
-            return self._estimate_via_llm(role, city)
+            return self._estimate_via_llm(role, city, jd_text)
         except Exception:
             # 任何 LLM 异常（无网/超时/返回乱码/解析失败）都不影响主流程，回退规则估算
-            return super().estimate_market_range(role, city)
+            return super().estimate_market_range(role, city, jd_text)
 
     # ── 增强 get_company_offer：补齐 core 锁定正则漏掉的常见写法 ─────────
     # core 的规则只匹配「25-40k」（k 仅在第 2 个数后）、「20万-35万」，漏掉：

@@ -27,16 +27,25 @@ from .models import (
 )
 
 
-def _token_present(text: str, token: str) -> bool:
-    """判断 token 是否作为「独立词」出现在 text 中（大小写不敏感）。
+def _token_present(text: str, token: str, case_sensitive: bool = False) -> bool:
+    """判断 token 是否作为「独立词」出现在 text 中（默认大小写不敏感）。
 
     以「非 ASCII 字母数字」为边界（中文也视为边界），因此：
     - '精通Python'、'熟悉MySQL'、'Kubernetes经验' 都能正确命中（中文相邻即视为边界）；
     - 不会把 'Python' 命中 'Pythonic'、'Git' 命中 'GitHub'（其后紧跟字母数字则不算边界）。
+    `case_sensitive=True` 时做大小写敏感匹配，用于「Teams/Slack/Notion」这类
+    与英文普通词同形的专有名词（teams=团队、slack=懈怠、notion=概念），
+    避免把「cross-functional teams」误判为微软 Teams 软件。
     """
     esc = re.escape(token)
     pat = r"(?<![A-Za-z0-9])" + esc + r"(?![A-Za-z0-9])"
-    return re.search(pat, text, re.I) is not None
+    flags = 0 if case_sensitive else re.I
+    return re.search(pat, text, flags) is not None
+
+
+# 大小写敏感匹配的易混淆词：与英文普通词同形（小写是普通词、大写专名才是技能），
+# 必须区分大小写，避免「teams(团队)/slack(懈怠)/notion(概念)」被误判为软件技能。
+CASE_SENSITIVE_SKILLS = {"Teams", "Slack", "Notion"}
 
 
 # 技术/工具硬技能词库（命中即视为具备该技能；全部以词表为边界，不乱抓）
@@ -56,14 +65,24 @@ SKILL_VOCAB: List[str] = [
     # 工程框架
     "Django", "Flask", "FastAPI", "Spring", "Spring Boot", "React", "Vue",
     "Node.js", "Angular", "TensorFlow", "PyTorch",
+    # 移动端 / 后端微服务 / 测试 / DevOps / Python 数据栈
+    "Flutter", "React Native", "uni-app", "微信小程序", "小程序", "Android", "iOS", "Objective-C",
+    ".NET", "ASP.NET", "Laravel", "Spring Cloud", "Dubbo", "微服务", "gRPC",
+    "Selenium", "pytest", "JUnit", "JMeter", "LoadRunner", "接口测试", "单元测试", "测试用例",
+    "Jenkins", "CI/CD", "CICD", "GitLab", "GitHub Actions", "Terraform", "Ansible", "Prometheus", "Grafana",
+    "RocketMQ", "Pulsar", "Lucene", "Solr",
+    "Pandas", "NumPy", "Scikit-learn", "sklearn", "XGBoost", "Matplotlib", "Seaborn",
     # 大数据 / AI
     "Hadoop", "Spark", "Flink", "Hive", "ETL", "数仓", "数据仓库", "数据挖掘",
     "数据可视化", "数据建模",
     "机器学习", "machine learning", "深度学习", "deep learning", "NLP",
     "计算机视觉", "大模型", "LLM", "Prompt",
+    # 统计 / 计量
+    "SPSS", "Stata", "SAS", "EViews", "Minitab",
+    "计量经济学", "统计学", "回归分析", "时间序列分析", "面板数据",
     # 办公 / 分析软件（用户点名：MS Office、Excel、PowerPoint、Power BI 等）
-    "MS Office", "Microsoft Office", "Microsoft Applications", "Microsoft 365", "Office", "Excel",
-    "PowerPoint", "PPT", "Word",
+    "MS Office", "Microsoft Office", "Microsoft Applications", "MS applications", "Microsoft 365", "Office", "Excel",
+    "PowerPoint", "Power Point", "PPT", "Word",
     "Chinese word processing", "中文文字处理", "中文打字",
     "Outlook", "Visio", "WPS", "Access", "Tableau", "Power BI", "PowerBI", "BI",
     "SAP", "Salesforce", "ERP", "CRM",
@@ -71,12 +90,25 @@ SKILL_VOCAB: List[str] = [
     "Bloomberg", "Bloomberg Terminal", "VBA", "Visual Basic for Applications",
     "FactSet", "Wind", "万得", "Capital IQ", "S&P Capital IQ", "Eikon", "Refinitiv",
     "QuickBooks", "Xero", "Sage",
+    # 金融 / 财会扩充（行情终端、量化、财务建模、投行、银行风控、衍生品）
+    "同花顺", "东方财富", "通达信", "大智慧", "iFinD",
+    "QuantLib", "QuantConnect", "Backtrader", "聚宽", "米筐", "掘金", "优矿",
+    "量化交易", "量化投资",
+    "财务建模", "financial modeling", "DCF", "估值建模", "现金流折现",
+    "IPO", "并购", "兼并收购", "尽职调查", "due diligence", "承销",
+    "审计", "税务筹划", "金蝶", "用友",
+    "风控", "信贷", "授信", "压力测试", "Value at Risk",
+    "期权", "期货", "衍生品",
     # 设计 / 产品 / 运营工具
     "Figma", "Axure", "Sketch", "Photoshop", "Illustrator", "Xmind",
     "原型设计", "产品设计", "UI设计", "UI 设计",
     "SEO", "SEM", "Google Analytics", "A/B测试", "埋点",
     # 项目管理 / 协作
     "Jira", "Confluence", "Scrum", "Kanban", "敏捷",
+    # 流程 / 标准 / 认证 / 协作办公
+    "Six Sigma", "六西格玛", "精益", "Lean", "PDCA", "OKR", "KPI", "ISO",
+    "PMP", "Prince2", "MS Project", "甘特图",
+    "Notion", "飞书", "钉钉", "企业微信", "Slack", "Teams", "MindManager",
 ]
 
 # 软技能词库（从经历/描述中抓取，均为明确指向「能力」的短语；中英文双语）
@@ -137,6 +169,7 @@ SKILL_SYNONYMS: dict = {
     "project management": ["项目管理"],
     "critical thinking": ["批判性思维", "批判性思考"],
     "creativity": ["创造力", "创意"],
+    "scikit-learn": ["sklearn", "scikit learn"],
 }
 
 # 上下位：键为「更宽泛」的技能，值为其包含的具体组件。
@@ -144,6 +177,8 @@ SKILL_SYNONYMS: dict = {
 SKILL_SUPERSETS: dict = {
     "Microsoft Applications": ["Office", "Microsoft Office", "MS Office", "Excel", "Word",
                                "PowerPoint", "PPT", "Outlook", "Visio", "WPS", "Access"],
+    "MS applications": ["Office", "Microsoft Office", "MS Office", "Microsoft Applications",
+                        "Excel", "Word", "PowerPoint", "PPT", "Outlook", "Visio", "WPS", "Access"],
     "MS Office": ["Office", "Excel", "Word", "PowerPoint", "PPT", "Outlook", "Visio", "WPS", "Access"],
     "Microsoft Office": ["Office", "Excel", "Word", "PowerPoint", "PPT", "Outlook", "Visio", "WPS", "Access"],
     "Office": ["Excel", "Word", "PowerPoint", "PPT", "Outlook", "Visio", "WPS", "Access"],
@@ -247,9 +282,88 @@ def extract_skills(text: str, include_soft: bool = True) -> List[str]:
     vocab = SKILL_VOCAB + (SOFT_SKILL_VOCAB if include_soft else [])
     found: List[str] = []
     for s in vocab:
-        if s not in found and _token_present(text, s):
+        cs = s in CASE_SENSITIVE_SKILLS
+        if s not in found and _token_present(text, s, case_sensitive=cs):
             found.append(s)
     return _dedupe_by_family(_dedupe_subsumed(found))
+
+
+def extract_knowledge_skills(text: str) -> List[str]:
+    """从 JD 抽取「领域知识/经验」类硬技能（knowledge of X / X knowledge / experience in X）。
+
+    这类句式表达「需要具备某领域知识/经验」，是硬技能（应进必需技能栏），
+    而非软技能/特质。产出 'X knowledge' / 'X experience'，忠于原文、不润色。
+
+    例：'knowledge of insurance products, operation procedure and control'
+        -> 'insurance products knowledge' / 'operation procedure knowledge' / 'control knowledge'
+        'risk and control knowledge/ experience in private banking'
+        -> 'risk and control knowledge' / 'private banking experience'
+    """
+    if not text:
+        return []
+    found: List[str] = []
+
+    def add(candidate: str) -> None:
+        c = candidate.strip().rstrip("。；;，, ")
+        if c and c not in found:
+            found.append(c)
+
+    _STOP = {
+        "have", "has", "had", "with", "basic", "good", "strong", "excellent",
+        "solid", "working", "proven", "deep", "sound", "relevant", "broad",
+        "extensive", "thorough", "in-depth", "indepth", "prior",
+    }
+
+    # 尾部「加分」表述（X is an advantage / X would be a plus / X is preferred 等），
+    # 是句子的谓语而非技能本身，必须剔除，避免「data analysis/reporting is an advantage」
+    # 被整段当成技能。
+    _ADV_TAIL = re.compile(
+        r"\s+(?:is|are|would\s+be|would\s+prove|proves?|considered)\s+"
+        r"(?:an?\s+)?(?:advantage|plus|bonus|preferred|preferable|desirable|beneficial|asset)\b",
+        re.I,
+    )
+
+    def _clean(part: str) -> str:
+        p = re.sub(
+            r"^(basic|good|strong|excellent|solid|working|proven|deep|sound|relevant|broad|extensive|thorough)\s+",
+            "", part, flags=re.I,
+        ).strip().rstrip("。；;，, ")
+        p = re.sub(r"\s+(?:and|or|&|与|及|以及)$", "", p, flags=re.I).strip()
+        return p
+
+    # 1) "knowledge/experience (and/or) in/of/with X"（X 可含逗号/顿号并列多项，跨逗号继续）
+    #    兼容 "Knowledge and/or experience in X"、"knowledge & experience in X" 等组合句式。
+    #    注意组合符不含单独的 "/"：避免把 "risk and control knowledge/ experience in ..."
+    #    这种「前一个短语以 knowledge 结尾、后接 / experience in」误当成组合句式。
+    pat1 = re.compile(
+        r"\b(knowledge|experience)(?:\s*(?:and\s*/?\s*or|&)\s*(?:knowledge|experience))?"
+        r"\s+(?:of|in|with)\s+([^;。.\n]+)",
+        re.I,
+    )
+    for m in pat1.finditer(text):
+        keyword = m.group(1).lower()
+        phrase = _ADV_TAIL.sub("", m.group(2)).strip()
+        # 注意：不按「/」切分，避免把 "G/L account"（总账）这类缩写斜杠误当分隔符
+        for part in re.split(r"\s+(?:and/or|and\s*/?\s*or|and|or)\s+|、|，|,", phrase):
+            part = _clean(part)
+            if len(part) < 2 or len(part) > 50 or part.lower() in _STOP:
+                continue
+            if keyword.startswith("knowledge"):
+                add(part + " knowledge")
+            else:
+                add(part + " experience")
+
+    # 2) "X knowledge"（X 为名词短语，位于 knowledge 之前）
+    pat2 = re.compile(
+        r"(?<![A-Za-z0-9])([A-Za-z][A-Za-z&/+-]*(?:\s+(?:and|or|&)\s+[A-Za-z][A-Za-z&/+-]*){0,3})\s+knowledge\b",
+        re.I,
+    )
+    for m in pat2.finditer(text):
+        phrase = _clean(m.group(1))
+        if len(phrase) < 2 or len(phrase) > 50 or phrase.lower() in _STOP:
+            continue
+        add(phrase + " knowledge")
+    return _dedupe_by_family(found)
 
 
 def extract_soft_skills_heuristic(text: str) -> List[str]:
@@ -257,9 +371,8 @@ def extract_soft_skills_heuristic(text: str) -> List[str]:
 
     两类来源：
     1) 软技能词表（SOFT_SKILL_VOCAB）命中，如 attention to detail / 沟通能力；
-    2) 句式派生：knowledge of X / experience with X / familiarity with X /
-       understanding of X / proficiency in X 等，抽取 X 作为软技能短语
-       （knowledge of 类追加 ' knowledge' 后缀，契合 'financial products knowledge' 写法）。
+    2) 句式派生：familiarity with X / understanding of X / skills in X 等，抽取 X
+       作为软技能短语（knowledge/experience 类领域知识已移入 `extract_knowledge_skills` 硬技能）。
     仅做抽取、不润色；去重按技能族。
     """
     if not text:
@@ -269,11 +382,10 @@ def extract_soft_skills_heuristic(text: str) -> List[str]:
     for s in SOFT_SKILL_VOCAB:
         if s not in found and _token_present(text, s):
             found.append(s)
-    # 2) 句式派生
+    # 2) 句式派生（仅软技能类：熟悉/理解/技能/专长/背景；不含 knowledge/experience 领域知识）
     pat = re.compile(
-        r"(knowledge of|experience (?:with|in)|familiarity with|familiar with|"
-        r"understanding of|proficiency in|skills? (?:in|with|for)|expertise in|"
-        r"background in)\s+([^,;。.\n]+)",
+        r"(familiarity with|familiar with|understanding of|skills? (?:in|with|for)|"
+        r"expertise in|background in)\s+([^,;。.\n]+)",
         re.I,
     )
     for m in pat.finditer(text):
@@ -284,12 +396,7 @@ def extract_soft_skills_heuristic(text: str) -> List[str]:
             part = re.sub(r"^(basic|good|strong|excellent|solid|working|proven)\s+", "", part, flags=re.I).strip()
             if len(part) < 2 or len(part) > 50:
                 continue
-            if keyword.startswith("knowledge"):
-                candidate = part + " knowledge"
-            elif keyword.startswith("experience"):
-                candidate = part + " experience"
-            else:
-                candidate = part
+            candidate = part
             if candidate and candidate not in found:
                 found.append(candidate)
     return _dedupe_by_family(found)
@@ -535,6 +642,7 @@ def parse_jd_text(text: str) -> dict:
             "required_languages": [], "prefers_immediate": False,
         }
     skills = extract_skills(text, include_soft=False)
+    knowledge = extract_knowledge_skills(text)
     required: List[str] = []
     preferred: List[str] = []
     for line in text.splitlines():
@@ -549,6 +657,10 @@ def parse_jd_text(text: str) -> dict:
             else:
                 if s not in required:
                     required.append(s)
+    # knowledge of X / experience in X 领域知识硬技能：默认进「必需」（是硬性要求）
+    for k in knowledge:
+        if k not in required:
+            required.append(k)
     return {
         "title": extract_job_title(text),
         "company": extract_company_name(text),

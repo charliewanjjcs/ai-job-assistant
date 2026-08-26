@@ -5,6 +5,8 @@
 from core.parsers import (
     extract_personality,
     extract_skills,
+    extract_soft_skills_heuristic,
+    extract_knowledge_skills,
     extract_expected_salary,
     parse_expected_salary,
     parse_jd_text,
@@ -326,3 +328,100 @@ def test_extract_skills_include_soft_flag():
     assert "Python" in hard_only
     assert "flexibility" not in hard_only
     assert "detail-oriented" not in hard_only
+
+
+# ── 词库扩充（金融/财会、互联网技术、统计、通用管理）───────────────────────
+def test_extract_skills_finance_vocab():
+    t = ("熟练使用 Bloomberg、Wind、同花顺、东方财富；"
+         "掌握 QuantLib 与 DCF 估值建模、现金流折现；"
+         "参与过 IPO 与并购、尽职调查项目，熟悉期权、期货与 Value at Risk")
+    skills = extract_skills(t)
+    for kw in ["Bloomberg", "Wind", "同花顺", "东方财富", "QuantLib", "DCF",
+               "估值建模", "现金流折现", "IPO", "并购", "尽职调查",
+               "期权", "期货", "Value at Risk"]:
+        assert kw in skills, f"缺少 {kw}"
+
+
+def test_extract_skills_tech_vocab():
+    t = ("熟悉 Flutter、React Native 与微信小程序开发；"
+         "使用 Selenium、pytest 做接口测试；"
+         "通过 Jenkins 与 CI/CD 自动化部署，用 Pandas、NumPy 做分析")
+    skills = extract_skills(t)
+    for kw in ["Flutter", "React Native", "微信小程序", "Selenium", "pytest",
+               "接口测试", "Jenkins", "CI/CD", "Pandas", "NumPy"]:
+        assert kw in skills, f"缺少 {kw}"
+
+
+def test_extract_skills_statistics_vocab():
+    t = "熟悉 SPSS、Stata、SAS 与 EViews，掌握回归分析、时间序列分析与面板数据"
+    skills = extract_skills(t)
+    for kw in ["SPSS", "Stata", "SAS", "EViews", "回归分析", "时间序列分析", "面板数据"]:
+        assert kw in skills, f"缺少 {kw}"
+
+
+def test_extract_skills_management_vocab():
+    t = "具备 PMP 认证，推行 Six Sigma 与精益管理，使用 OKR、KPI 考核，熟练飞书、钉钉协作"
+    skills = extract_skills(t)
+    for kw in ["PMP", "Six Sigma", "精益", "OKR", "KPI", "飞书", "钉钉"]:
+        assert kw in skills, f"缺少 {kw}"
+
+
+def test_extract_skills_new_vocab_no_false_positive():
+    # 新词边界/歧义校验：express 是动词，不应误判为 Express 框架（未收录）
+    assert "Express" not in extract_skills("Ability to express ideas clearly.")
+    # var 是 JS 关键字，不应误判为 Value at Risk / VaR（未收录裸 VaR）
+    assert "Value at Risk" not in extract_skills("declare with var keyword in JavaScript.")
+
+
+# ── 技能抽取精度修复（knowledge 句式 / teams 消歧 / MS applications 合并）───
+def test_extract_knowledge_skills_as_hard_skills():
+    # knowledge of X / experience in X 是「领域知识/经验」硬技能，应进必需技能，不进软技能
+    t = ("Requirement: knowledge of insurance products, operation procedure and control; "
+         "risk and control knowledge/experience in private banking")
+    j = parse_jd_text(t)
+    for kw in ["insurance products knowledge", "operation procedure knowledge",
+               "control knowledge", "risk and control knowledge", "private banking experience"]:
+        assert kw in j["required_skills"], f"缺少 {kw}"
+    # 这些领域知识不应再进「软技能/特质」栏
+    soft = extract_soft_skills_heuristic(t)
+    assert "insurance products knowledge" not in soft
+    assert "private banking experience" not in soft
+
+
+def test_extract_skills_teams_case_sensitive():
+    # "teams"（团队复数，全小写）不应误判为微软 Teams 软件；"Microsoft Teams" 才是软件
+    assert "Teams" not in extract_skills(
+        "work with cross-functional teams to deliver projects", include_soft=False)
+    assert "Teams" in extract_skills(
+        "familiar with Microsoft Teams and SharePoint", include_soft=False)
+
+
+def test_extract_skills_ms_applications_merge():
+    # "MS applications, including Excel, Word and Power Point" 应合并为宽泛技能，而非只列 Excel
+    t = "Proficiency in MS applications, including Excel, Word and Power Point."
+    skills = extract_skills(t, include_soft=False)
+    assert "MS applications" in skills
+    assert "Excel" not in skills  # 子项被宽泛词合并
+    assert "Word" not in skills
+    assert "PowerPoint" not in skills
+    # 单写 Excel（无宽泛词）仍应识别 Excel
+    assert "Excel" in extract_skills("Proficient in Excel", include_soft=False)
+
+
+def test_extract_knowledge_skills_and_or_pattern():
+    # "Knowledge and/or experience in X" 组合句式 + 尾部 "is an advantage" 应剔除
+    t = "Knowledge and/or experience in HR system and data analysis/reporting is an advantage"
+    skills = extract_knowledge_skills(t)
+    assert "HR system knowledge" in skills
+    assert "data analysis/reporting knowledge" in skills
+    # "is an advantage" 绝不能混入技能名
+    assert all("advantage" not in s for s in skills)
+    assert all("is" not in s.split() for s in skills)
+
+
+def test_extract_knowledge_skills_advantage_tail_stripped():
+    # 尾部「加分」表述（is a plus / would be an advantage）应被剔除
+    assert extract_knowledge_skills("knowledge of Python and Java is a plus") == [
+        "Python knowledge", "Java knowledge"]
+    assert extract_knowledge_skills("experience in banking would be an advantage") == [
+        "banking experience"]

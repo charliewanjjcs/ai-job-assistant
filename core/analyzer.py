@@ -31,7 +31,7 @@ class CoreAnalyzer(Analyzer):
     def analyze(self, profile: UserProfile, jd: JdInfo) -> Report:
         # 1) 薪资：市场区间（Provider） + 公司报价（Provider 解析） + 三方对比
         market = self.salary_provider.estimate_market_range(
-            jd.title or profile.ideal_job or "", jd.city or profile.city
+            jd.title or profile.ideal_job or "", jd.city or profile.city, jd.raw_text
         )
         company_offer = self.salary_provider.get_company_offer(jd)
         salary_analysis = SalaryMatcher.analyze(profile.expected_salary, market, company_offer)

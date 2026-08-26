@@ -17,14 +17,23 @@ from core.parsers import (
 
 # ===== 1. 软技能启发式抽取（含自由表述）=====
 def test_soft_skills_knowledge_of_pattern():
+    # knowledge of X 是「领域知识」硬技能，进必需技能；软技能栏只保留 attention to detail 等特质
+    from core.parsers import extract_knowledge_skills, parse_jd_text
     jd = (
         "Basic knowledge of financial products and G/L account reconciliation. "
         "We need someone with attention to detail and strong communication skills."
     )
-    out = extract_soft_skills_heuristic(jd)
-    assert "financial products knowledge" in out
-    assert "G/L account reconciliation knowledge" in out
-    assert "attention to detail" in out
+    # knowledge of X 进硬技能（必需技能）
+    hard = extract_knowledge_skills(jd)
+    assert "financial products knowledge" in hard
+    assert "G/L account reconciliation knowledge" in hard
+    assert "financial products knowledge" in parse_jd_text(jd)["required_skills"]
+    # 软技能栏仍保留 attention to detail / communication（同族去重后为 communication），不含知识类
+    soft = extract_soft_skills_heuristic(jd)
+    assert "attention to detail" in soft
+    assert "communication" in soft
+    assert "financial products knowledge" not in soft
+    assert "G/L account reconciliation knowledge" not in soft
 
 
 def test_soft_skills_lexicon_match():

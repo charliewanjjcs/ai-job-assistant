@@ -18,8 +18,14 @@ class SalaryProvider(ABC):
     """薪资数据来源。MVP 用规则估算；Phase4 用真实 API 实现同一接口热插拔。"""
 
     @abstractmethod
-    def estimate_market_range(self, role: str, city: Optional[str] = None) -> Tuple[Optional[float], Optional[float]]:
-        """返回 (年化CNY下限, 年化CNY上限)；无法估计返回 (None, None)。"""
+    def estimate_market_range(
+        self, role: str, city: Optional[str] = None, jd_text: Optional[str] = None
+    ) -> Tuple[Optional[float], Optional[float]]:
+        """返回 (年化CNY下限, 年化CNY上限)；无法估计返回 (None, None)。
+
+        `jd_text`：JD 原始文本（含职级、经验年限、行业、职责），供 LLM 估算
+        高职位级岗位（如 VP）时参考，避免只凭岗位名低估薪资。
+        """
 
     @abstractmethod
     def get_company_offer(self, jd: JdInfo) -> Optional[SalaryAmount]:
