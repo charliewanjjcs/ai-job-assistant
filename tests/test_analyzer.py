@@ -31,3 +31,24 @@ def test_analyzer_runs_without_real_key():
     assert len(r.interview_qa) >= 1
     assert r.interview_qa[0].question
     assert r.career_prospect.promotion  # 前景已解析
+
+
+def test_high_frequency_interview_questions_present_and_labeled():
+    """两道高频必问（对岗位理解/对公司认识）应始终出现并标记为「高频」；职业规划题已移除。"""
+    p = UserProfile(
+        skills=["python"],
+        expected_salary=SalaryAmount(value=300000, currency=Currency.CNY, period=PayPeriod.ANNUAL),
+    )
+    jd = JdInfo(title="后端", company="X", required_skills=["Python"], raw_text="薪资 20-30K")
+    r = CoreAnalyzer(llm=FakeLLM()).analyze(p, jd)
+    questions = [q.question for q in r.interview_qa]
+    assert any("对岗位的理解" in q for q in questions)
+    assert any("为什么想来这家公司" in q for q in questions)
+    # 这两题必须标记为「高频」，不再叫「固定」
+    hf = [q for q in r.interview_qa if "对岗位的理解" in q.question or "为什么想来这家公司" in q.question]
+    assert len(hf) == 2
+    for q in hf:
+        assert q.frequency == "高频"
+        assert q.direction  # 即使 LLM 未生成，也应回退到默认回答方向
+    # 职业规划题已被移除
+    assert not any("职业规划" in q for q in questions)

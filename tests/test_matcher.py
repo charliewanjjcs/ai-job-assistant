@@ -150,3 +150,16 @@ def test_availability_match():
         UserProfile(availability=Availability.IMMEDIATE), JdInfo(prefers_immediate=False))
     assert r3.fit == "无明确要求"
 
+
+def test_improvement_preferred_label_is_soft_skill():
+    """缺失的加分项应归类为「软技能/特质」提升建议，而非「加分项」。"""
+    p = _profile(["python"])
+    jd = _jd(["Python"], ["沟通能力"])
+    r = SkillMatcher.match(p, jd)
+    sugg = build_improvements(r, p, jd)
+    soft = [s for s in sugg if s.area.startswith("强化软技能/特质")]
+    assert soft, "应生成软技能/特质提升建议"
+    assert "沟通能力" in soft[0].area
+    assert not any(s.area.startswith("强化加分项") for s in sugg)
+
+

@@ -8,7 +8,7 @@ import os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import pytest
-from core.models import SalaryAmount, Currency, PayPeriod
+from core.models import SalaryAmount, Currency, PayPeriod, SalaryAnalysis
 from core.salary import SalaryMatcher
 
 
@@ -67,3 +67,61 @@ def test_monthly_offer_normalized():
     r = SalaryMatcher.analyze(exp, (300000, 500000), comp)
     assert r.company_offer == 300000.0
     assert r.verdict == "偏低"      # 30w < 36w
+
+
+def test_display_period_follows_expected_monthly():
+    """预期填月薪 -> 展示周期应为月薪（内部值仍年化）。"""
+    exp = _cny(20000, PayPeriod.MONTHLY)  # 月薪 20000 -> 年化 240000
+    comp = _cny(300000)
+    r = SalaryMatcher.analyze(exp, (300000, 500000), comp)
+    assert r.display_period == PayPeriod.MONTHLY
+    # 内部值仍是年化 CNY，渲染层再除以 12
+    assert r.expected == 240000.0
+    assert r.company_offer == 300000.0
+
+
+def test_display_period_default_annual():
+    """预期填年薪 / 缺失 -> 展示周期为年薪。"""
+    r1 = SalaryMatcher.analyze(_cny(400000), (300000, 500000), None)
+    assert r1.display_period == PayPeriod.ANNUAL
+    r2 = SalaryMatcher.analyze(None, (300000, 500000), None)
+    assert r2.display_period == PayPeriod.ANNUAL
+
+
+def test_salary_analysis_roundtrip_display_period():
+    """display_period 应随报告 JSON 序列化/反序列化保留。"""
+    r = SalaryMatcher.analyze(
+        _cny(20000, PayPeriod.MONTHLY), (300000, 500000), _cny(300000)
+    )
+    r2 = SalaryAnalysis.model_validate_json(r.model_dump_json())
+    assert r2.display_period == PayPeriod.MONTHLY
+
+
+def test_display_currency_follows_expected_hkd():
+    """预期填港币 -> 展示币种应为港币（内部值仍年化 CNY）。"""
+    exp = SalaryAmount(value=20000, currency=Currency.HKD, period=PayPeriod.MONTHLY)
+    comp = SalaryAmount(value=30000, currency=Currency.CNY, period=PayPeriod.MONTHLY)
+    r = SalaryMatcher.analyze(exp, (300000, 500000), comp)
+    assert r.display_currency == Currency.HKD
+    # 内部 expected 仍是年化 CNY（港币 20000*12*0.92）
+    assert r.expected == pytest.approx(20000 * 12 * 0.92)
+
+
+def test_display_currency_default_cny():
+    """预期填人民币 / 缺失 -> 展示币种为人民币。"""
+    r1 = SalaryMatcher.analyze(_cny(400000), (300000, 500000), None)
+    assert r1.display_currency == Currency.CNY
+    r2 = SalaryMatcher.analyze(None, (300000, 500000), None)
+    assert r2.display_currency == Currency.CNY
+
+
+def test_salary_analysis_roundtrip_display_currency():
+    """display_currency 应随报告 JSON 序列化/反序列化保留。"""
+    r = SalaryMatcher.analyze(
+        SalaryAmount(value=20000, currency=Currency.HKD, period=PayPeriod.MONTHLY),
+        (300000, 500000), _cny(300000),
+    )
+    r2 = SalaryAnalysis.model_validate_json(r.model_dump_json())
+    assert r2.display_currency == Currency.HKD
+
+

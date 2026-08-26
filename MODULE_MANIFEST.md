@@ -30,7 +30,7 @@
 |------|------|----------|------|------|
 | PDF 简历解析 | `modules/resume_pdf/pdf_parser.py` | `PdfResumeParser.parse(path:str) -> UserProfile`（pypdf 抽文本 + 复用 core.parsers.parse_resume_text，不修改 core） | locked | phase2 |
 | URL 读取 JD | `modules/jd_url/` | `JdSource`（`UrlJdSource`：HTTP 优先 + Playwright 无头回退，复用 `core.parsers.parse_jd_text`，不修改 core） | locked | phase3 |
-| 外部薪资 API | `modules/salary_api/` | `SalaryProvider` | planned | — |
+| 外部薪资 API | `modules/salary_api/` | `SalaryProvider`（`DeepSeekSalaryProvider`：`estimate_market_range` 走 DeepSeek LLM 估算、失败回退规则；`get_company_offer` 补齐 `25k-40k`/`2w-3w` 等写法后回退父类正则）。`tighten.py`：`TightenedSalaryProvider` 包装任意 `SalaryProvider`，按职级+市场价将市场区间收窄（中点锚定、职级浮动 0.10/0.12/0.15） | locked | phase4 |
 
 ## app/（Streamlit 前端：多页面 + 本地账户 + SQLite 持久化）
 | 模块 | 路径 | 公开接口 | 状态 | 锁定 |

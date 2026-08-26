@@ -41,6 +41,44 @@ CURRENCY_LABELS = ["¥ 人民币 (CNY)", "HK$ 港币 (HKD)"]
 CURRENCY_VALUES = {"¥ 人民币 (CNY)": "CNY", "HK$ 港币 (HKD)": "HKD"}
 EXP_LABELS = {"年薪": "预期年薪（元）", "月薪": "预期月薪（元）", "时薪": "预期时薪（元）"}
 
+# 候选人资料在 session_state 中的「非 widget」镜像键：
+# 个人资料页的薪资/简历等字段是 widget 键（exp_value / resume …），Streamlit 在跨页面导航
+# （目标页未渲染该 widget）时会裁剪这些键，导致填好的数据在「职位分析」页被清空
+# （表现为「你的预期（年薪）未填」）。用这个非 widget 键做镜像，跨页导航不丢。
+CANDIDATE_CACHE_KEY = "candidate_profile_cache"
+_CANDIDATE_CACHE_FIELDS = (
+    "resume", "skills", "ideal_job", "personality", "city",
+    "exp_period_label", "exp_currency_label", "exp_value",
+    "lang_list", "availability",
+)
+
+
+def _read_candidate_cache() -> dict:
+    c = st.session_state.get(CANDIDATE_CACHE_KEY)
+    return c if isinstance(c, dict) else {}
+
+
+def sync_candidate_cache() -> None:
+    """把当前 session_state 里的候选人字段镜像进非 widget 缓存键。
+
+    在个人资料页每次渲染末调用，确保导航离开前最新编辑已落进缓存（不被裁剪）。
+    """
+    c = _read_candidate_cache()
+    for k in _CANDIDATE_CACHE_FIELDS:
+        if k in st.session_state:
+            c[k] = st.session_state[k]
+    st.session_state[CANDIDATE_CACHE_KEY] = c
+
+
+def cache_candidate_from_db(p: dict) -> None:
+    """把从 DB 读出的候选人 dict 并入缓存（空值不覆盖，避免清掉未保存的编辑）。"""
+    c = _read_candidate_cache()
+    for k in _CANDIDATE_CACHE_FIELDS:
+        if p.get(k) is not None:
+            c[k] = p[k]
+    st.session_state[CANDIDATE_CACHE_KEY] = c
+
+
 
 def coerce_int_salary(v):
     """把薪资值规范为 int 或 None，供 number_input(value=...) 使用。
@@ -77,7 +115,9 @@ class DemoLLM:
             "Q: 为什么想加入我们？\nA: 结合公司业务与个人职业规划，避免空泛。\nF: 中频\n"
             "Q: 你的优缺点是什么？\nA: 优点贴合岗位，缺点谈改进动作而非硬伤。\nF: 中频\n"
             "Q: 期望薪资是多少？\nA: 基于市场与自身能力给出区间，并说明依据。\nF: 高频\n"
-            "Q: 未来三到五年规划？\nA: 技术与业务双线成长，逐步承担更大责任。\nF: 低频"
+            "Q: 未来三到五年规划？\nA: 技术与业务双线成长，逐步承担更大责任。\nF: 低频\n"
+            "A1: 结合 JD 的职责描述，说明你对该岗位核心目标的理解，并关联自身最相关的项目经验与量化成果。\n"
+            "A2: 说明你对该公司业务、产品或文化的了解，以及个人职业规划与公司的契合点，避免空泛表态。"
         )
 
 
@@ -103,20 +143,41 @@ def on_jd_text_change():
 
 
 def build_profile():
-    resume = st.session_state.get("resume", "")
+    # widget 键可能在跨页导航时被 Streamlit 裁剪，故统一回退到非 widget 缓存
+    cache = _read_candidate_cache()
+    resume = st.session_state.get("resume")
+    if resume is None:
+        resume = cache.get("resume", "")
     parsed = parse_resume_text(resume) if resume else {}
-    skills_raw = st.session_state.get("skills", "")
-    skills = split_skills(skills_raw) or (parsed.get("skills") or [])
-    personality = st.session_state.get("personality", "") or parsed.get("personality")
-    ideal_job = st.session_state.get("ideal_job", "") or None
-    city = st.session_state.get("city", "") or parsed.get("city")
 
-    # 预期薪资：手动优先；手动未填则用解析结果
-    period_label = st.session_state.get("exp_period_label", "年薪")
+    skills_raw = st.session_state.get("skills")
+    if skills_raw is None:
+        skills_raw = cache.get("skills", "")
+    skills = split_skills(skills_raw) or (parsed.get("skills") or [])
+
+    personality = st.session_state.get("personality")
+    if personality is None:
+        personality = cache.get("personality", "")
+    personality = personality or parsed.get("personality")
+
+    ideal_job = st.session_state.get("ideal_job")
+    if ideal_job is None:
+        ideal_job = cache.get("ideal_job", "")
+    ideal_job = ideal_job or None
+
+    city = st.session_state.get("city")
+    if city is None:
+        city = cache.get("city", "")
+    city = city or parsed.get("city")
+
+    # 预期薪资：手动优先；手动未填则用解析结果或缓存（跨页导航兜底）
+    period_label = st.session_state.get("exp_period_label") or cache.get("exp_period_label") or "年薪"
     period = PERIOD_VALUES.get(period_label, "annual")
-    currency_label = st.session_state.get("exp_currency_label", "¥ 人民币 (CNY)")
+    currency_label = st.session_state.get("exp_currency_label") or cache.get("exp_currency_label") or "¥ 人民币 (CNY)"
     currency = CURRENCY_VALUES.get(currency_label, "CNY")
-    value = st.session_state.get("exp_value", 0.0)
+    value = st.session_state.get("exp_value")
+    if value is None:
+        value = cache.get("exp_value")
     expected = None
     if value and value > 0:
         v = float(value)
@@ -126,11 +187,16 @@ def build_profile():
         if pexp:
             expected = pexp
 
+    langs_raw = st.session_state.get("lang_list")
+    if langs_raw is None:
+        langs_raw = cache.get("lang_list", [])
     langs = [
         LanguageProficiency(language=e["language"], level=LanguageLevel(e["level"]))
-        for e in st.session_state.get("lang_list", [])
+        for e in langs_raw
     ]
     av = st.session_state.get("availability")
+    if av is None:
+        av = cache.get("availability")
     availability = Availability(av) if av and av != "未填写" else None
 
     return UserProfile(

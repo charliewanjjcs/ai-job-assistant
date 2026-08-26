@@ -54,6 +54,19 @@ _COLLAPSE_SIDEBAR_JS = """
 </script>
 """
 
+# 历史记录表格各列固定宽度（单位：像素，由 column_config.TextColumn(width=...) 应用）。
+# 注意：Streamlit 的 column_config width 是「像素」语义（"small"=75px, "medium"=200px, "large"=400px），
+# 不是百分比——若总和 < 容器宽度，剩余空间会平均分给各列，导致整数差异被抹平。
+# 故本表使用绝对像素值并让总和接近容器宽度，让职位/公司明显宽于技能匹配/分析时间。
+HISTORY_COLUMN_WIDTHS = {
+    "职位": 150,
+    "公司": 150,
+    "技能匹配": 75,
+    "薪资结论": 95,
+    "分析时间": 75,
+}
+
+
 # 分析结果页布局：历史记录（左）与分隔线向左移动，左右各留约 1/20（5%）空白，
 # 使历史表格无需左右滚动看全，右侧详情占满剩余宽度。覆盖 main.py 的全局居中（max-width:75%）。
 _RESULTS_CSS = """
@@ -87,7 +100,7 @@ def render() -> None:
         st.info("还没有分析结果。去「职位分析」页粘贴 JD 开始第一次分析吧。")
         return
 
-    ids = [r["id"] for r in rows]  # 与 dataframe 行顺序一一对应（位置索引映射）
+    ids = [r["id"] for r in rows]  # 与表格行顺序一一对应（位置索引映射）
 
     # 「职位分析」跳转带来的“刚分析记录”默认选中（读后即清，避免覆盖用户后续手选）
     pending = st.session_state.pop("_pending_result_id", None)
@@ -116,6 +129,11 @@ def render() -> None:
             }
             for r in rows
         ]
+        # 固定各列宽度占比 + 单元格文字水平居中；点击某一行即切换详情（原生单行选择）。
+        column_config = {
+            name: st.column_config.TextColumn(name, width=w, alignment="center")
+            for name, w in HISTORY_COLUMN_WIDTHS.items()
+        }
         event = st.dataframe(
             table,
             key="history_df",
@@ -123,7 +141,9 @@ def render() -> None:
             selection_mode="single-row-required",
             hide_index=True,
             use_container_width=True,
+            column_config=column_config,
         )
+
         sel_rows = list(event.selection.rows) if event and event.selection.rows else []
         selected_id = ids[sel_rows[0]] if sel_rows else ids[0]
 
@@ -153,7 +173,9 @@ def render() -> None:
             st.info("未找到该记录，可能已被删除。")
         else:
             report = storage.deserialize_report(row["report_json"])
-            st.markdown(f"#### {report.role or '未命名岗位'} @ {report.company or '—'}")
+            # 大标题：岗位名称（上一行）→ 公司名称（下一行），中间换行而非「@」
+            st.markdown(f"#### {report.role or '未命名岗位'}")
+            st.markdown(f"##### {report.company or '—'}")
             st.caption(f"分析时间：{report.generated_at or row['created_at']}")
             render_report(report)
             st.divider()

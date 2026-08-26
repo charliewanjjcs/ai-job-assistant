@@ -93,6 +93,10 @@ class SalaryAnalysis(BaseModel):
     gap_vs_market: Optional[float] = None
     currency_warning: Optional[str] = None
     notes: List[str] = Field(default_factory=list)
+    # 展示周期：跟随用户预期薪资周期（月薪 -> 月薪；否则年薪）。仅影响展示，不改年化归一化值。
+    display_period: PayPeriod = PayPeriod.ANNUAL
+    # 展示币种：跟随用户预期薪资币种（港币/美元 -> 对应币种；否则人民币）。仅影响展示，不改年化 CNY 归一化值。
+    display_currency: Currency = Currency.CNY
 
 
 class SkillMatchItem(BaseModel):
@@ -195,3 +199,19 @@ def to_annual_cny(amount: Optional[SalaryAmount], usd_rate: float = USD_TO_CNY,
         val = val * HOURLY_TO_ANNUAL_FACTOR
     # ANNUAL / UNKNOWN -> 视为已年化
     return float(round(val, 2))
+
+
+def cny_to_currency(value: Optional[float], currency: Currency,
+                   usd_rate: float = USD_TO_CNY, hkd_rate: float = HKD_TO_CNY) -> Optional[float]:
+    """将「年化 CNY 元」按展示币种折算回去（仅展示用，不改变内部归一化值）。
+
+    CNY 原样返回；HKD = CNY / 0.92；USD = CNY / 7.2。
+    """
+    if value is None:
+        return None
+    if currency == Currency.HKD:
+        return round(value / hkd_rate, 2)
+    if currency == Currency.USD:
+        return round(value / usd_rate, 2)
+    return value
+

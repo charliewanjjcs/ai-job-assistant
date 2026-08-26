@@ -108,7 +108,7 @@ def build_improvements(
         ))
     for s in skill_result.missing_preferred:
         sugg.append(ImprovementSuggestion(
-            area=f"强化加分项：{s}",
+            area=f"强化软技能/特质：{s}",
             detail=f"{s} 为加分项，掌握后可提升竞争力。",
             priority="中",
         ))

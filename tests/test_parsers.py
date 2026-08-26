@@ -297,3 +297,32 @@ def test_parse_jd_priority_no_leak_to_unrelated_skills():
     assert "Redis" in j["required_skills"]
     assert "MySQL" not in j["preferred_skills"]
     assert "Redis" not in j["preferred_skills"]
+
+
+def test_parse_jd_required_skills_exclude_soft():
+    # 「必需/加分技能」只应含硬技能，软技能（detail-oriented、flexibility 等）
+    # 应单独进「软技能/特质」栏，不得混入 required_skills
+    t = "要求精通 MS Office、Bloomberg、VBA；具备 detail-oriented、flexibility 与团队合作能力"
+    j = parse_jd_text(t)
+    assert "MS Office" in j["required_skills"]
+    assert "Bloomberg" in j["required_skills"]
+    assert "VBA" in j["required_skills"]
+    # 软技能不得进入必需/加分技能
+    assert "detail-oriented" not in j["required_skills"]
+    assert "flexibility" not in j["required_skills"]
+    assert "团队合作" not in j["required_skills"]
+    assert "detail-oriented" not in j["preferred_skills"]
+    assert "flexibility" not in j["preferred_skills"]
+
+
+def test_extract_skills_include_soft_flag():
+    from core.parsers import extract_skills
+    t = "精通 Python；具备 flexibility 与 detail-oriented"
+    # 默认（含软技能）——供简历技能库使用
+    all_skills = extract_skills(t)
+    assert "flexibility" in all_skills
+    # include_soft=False——供 JD 必需/加分技能使用，只保留硬技能
+    hard_only = extract_skills(t, include_soft=False)
+    assert "Python" in hard_only
+    assert "flexibility" not in hard_only
+    assert "detail-oriented" not in hard_only

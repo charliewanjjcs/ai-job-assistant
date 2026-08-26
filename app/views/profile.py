@@ -20,7 +20,7 @@ import app.storage as storage
 from app.components.lang_manager import lang_manager
 from app.components.sidebar_offset import inject_content_offset
 from app.components.skill_editor import skill_editor
-from app.state import AVAIL_OPTIONS, CURRENCY_LABELS, EXP_LABELS, PERIOD_LABELS, coerce_int_salary
+from app.state import AVAIL_OPTIONS, CURRENCY_LABELS, EXP_LABELS, PERIOD_LABELS, coerce_int_salary, sync_candidate_cache
 from core.parsers import SKILL_VOCAB, SOFT_SKILL_VOCAB
 from modules.resume_pdf.pdf_parser import PdfResumeParser
 
@@ -41,6 +41,8 @@ def _load_profile_to_session(uid: int) -> None:
     st.session_state["lang_list"] = p.get("lang_list") or []
     st.session_state["availability"] = p.get("availability") or "未填写"
     st.session_state["skills"] = ", ".join(storage.list_skills(uid))
+    # 把刚载入的字段镜像进非 widget 缓存，跨页导航（职位分析页会裁剪 widget 键）不丢
+    sync_candidate_cache()
 
 
 def _save_profile(uid: int) -> None:
@@ -203,3 +205,6 @@ def render() -> None:
             # 避免「widget 实例化后改 session_state」报错（同之前的 skill_query 修复思路）
             st.session_state["_active_page"] = None
             st.rerun()
+
+    # 渲染末：把当前各字段镜像进非 widget 缓存（捕获本次编辑），导航离开前不丢
+    sync_candidate_cache()

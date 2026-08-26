@@ -43,6 +43,19 @@ from app.views.results import render
 render()
 """
 
+# 路由脚本：在同一 AppTest 会话里切换「个人资料」与「职位分析」页，
+# 共用 session_state（真实模拟用户从资料页填完薪资再点进职位分析页的导航）。
+_ROUTER_SCRIPT = """
+import streamlit as st
+import app.auth as auth
+import app.storage as storage
+from app.views.profile import render as profile_render
+from app.views.job_analysis import render as job_render
+page = st.session_state.get("_nav", "profile")
+if page == "profile": profile_render()
+elif page == "job_analysis": job_render()
+"""
+
 
 @pytest.fixture
 def db(tmp_path):
@@ -202,3 +215,47 @@ def test_e2e_results_page_renders_report(db, monkeypatch):
     for label in ["薪资匹配结论", "能力匹配度", "语言匹配度", "到岗匹配",
                   "提升建议", "岗位前景", "日常工作", "面试高频问题"]:
         assert label in subs, f"结果页缺少板块「{label}」"
+
+
+# ── D. 端到端回归：个人资料填「月薪港币」后导航到职位分析页，薪资不应丢 ──────
+def test_e2e_salary_survives_page_navigation(db):
+    """回归：填好月薪港币后，跨页导航到职位分析页会让 widget 键被裁剪；
+
+    build_profile 必须靠非 widget 缓存回退，否则结果显示「你的预期（年薪）未填」。
+    """
+    uid = storage.get_or_create_user("wechat", "wx-nav-salary")
+    at = AppTest.from_string(_ROUTER_SCRIPT, default_timeout=30)
+    at.run()
+    at.session_state["user_id"] = uid
+    at.session_state["user_display"] = "test"
+    at.session_state["_nav"] = "profile"
+    at.run()
+    assert not at.exception, f"profile 渲染异常: {at.exception}"
+
+    at.selectbox(key="exp_period_label").set_value("月薪").run()
+    at.selectbox(key="exp_currency_label").set_value("HK$ 港币 (HKD)").run()
+    at.number_input(key="exp_value").set_value(20000).run()
+    # 保存到 DB（真实用户行为之一）；即便不保存，缓存也应兜底
+    for b in at.button:
+        if b.label == "保存资料":
+            b.click().run()
+            break
+
+    # 切换到职位分析页（真实导航，共享 session_state；此时薪资 widget 键会被 Streamlit 裁剪）
+    at.session_state["_nav"] = "job_analysis"
+    at.run()
+    assert not at.exception, f"job 渲染异常: {at.exception}"
+    at.text_area(key="jd_text").set_value(
+        "职位名称：后端工程师\n公司：某科技公司\n薪资：25k-40k").run()
+    for b in at.button:
+        if b.label == "开始分析":
+            b.click().run()
+            break
+
+    rows = storage.list_analysis_results(uid)
+    assert rows, "开始分析后应落库一条结果"
+    row = storage.get_analysis_result(uid, rows[0]["id"])
+    sa = storage.deserialize_report(row["report_json"]).salary_analysis
+    assert sa.expected is not None, "月薪港币应被识别，不应是「未填」"
+    assert sa.display_period.value == "monthly"
+    assert sa.display_currency.value == "HKD"

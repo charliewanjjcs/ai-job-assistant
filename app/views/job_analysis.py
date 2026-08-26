@@ -18,11 +18,14 @@ import app.auth as auth
 import app.storage as storage
 from app.components.lang_manager import lang_manager
 from app.components.sidebar_offset import inject_content_offset
-from app.state import DemoLLM, build_jd, build_profile, coerce_int_salary, extract_jd_meta, on_jd_text_change
+from app.state import (DemoLLM, build_jd, build_profile, cache_candidate_from_db,
+                       coerce_int_salary, extract_jd_meta, on_jd_text_change)
 from app.views import results as results_page
 from core.analyzer import CoreAnalyzer
 from core.llm import DeepSeekClient
 from modules.jd_url import UrlJdSource
+from modules.salary_api import DeepSeekSalaryProvider, TightenedSalaryProvider
+from core.salary import RuleBasedSalaryProvider
 
 
 def _load_candidate_to_session(uid: int) -> None:
@@ -36,12 +39,18 @@ def _load_candidate_to_session(uid: int) -> None:
     st.session_state["ideal_job"] = p.get("ideal_job") or ""
     st.session_state["personality"] = p.get("personality") or ""
     st.session_state["city"] = p.get("city") or ""
-    st.session_state["exp_period_label"] = p.get("exp_period_label") or "年薪"
-    st.session_state["exp_currency_label"] = p.get("exp_currency_label") or "¥ 人民币 (CNY)"
-    st.session_state["exp_value"] = coerce_int_salary(p.get("exp_value"))
+    # 预期薪资：仅当 session_state 中尚无有效值时才用 DB 覆盖。
+    # 否则「在个人资料页填了但还没点保存」的月薪/港币会被 DB 的空值冲掉，
+    # 导致分析结果显示「未填 / 年薪」。已保存过的值本就在 session_state，无需再读 DB。
+    if not st.session_state.get("exp_value"):
+        st.session_state["exp_period_label"] = p.get("exp_period_label") or "年薪"
+        st.session_state["exp_currency_label"] = p.get("exp_currency_label") or "¥ 人民币 (CNY)"
+        st.session_state["exp_value"] = coerce_int_salary(p.get("exp_value"))
     st.session_state["lang_list"] = p.get("lang_list") or []
     st.session_state["availability"] = p.get("availability") or "未填写"
     st.session_state["skills"] = ", ".join(storage.list_skills(uid))
+    # 把已保存值并入非 widget 缓存：即便跨页导航裁剪了 widget 键，分析结果时仍可回退
+    cache_candidate_from_db(p)
 
 
 def _fetch_jd_from_url() -> None:
@@ -137,12 +146,19 @@ def render() -> None:
             st.checkbox("JD 偏好「尽快到岗 / Immediate available」", key="jd_prefers_immediate")
 
     if st.button("开始分析", type="primary"):
+        # 跨页导航会裁剪个人资料页的 widget 键，这里再从 DB 把已保存值并入缓存（空值不覆盖），
+        # 与 build_profile 的缓存回退配合，确保「填了月薪港币」在分析时不被清成未填/年薪
+        cache_candidate_from_db(storage.load_profile(uid) or {})
         profile = build_profile()
         jd = build_jd()
         demo = bool(st.session_state.get("demo", True))
         try:
             llm = DemoLLM() if demo else DeepSeekClient()
-            analyzer = CoreAnalyzer(llm=llm)
+            # 薪资数据源：无 Key（demo）用规则估算；有 Key 用 DeepSeek 大模型估算（失败自动回退规则）。
+            # 外层统一用 TightenedSalaryProvider 收窄市场区间（按职级+市场价），避免区间过宽。
+            base_salary = RuleBasedSalaryProvider() if demo else DeepSeekSalaryProvider(llm=llm)
+            salary = TightenedSalaryProvider(base_salary)
+            analyzer = CoreAnalyzer(llm=llm, salary_provider=salary)
             with st.spinner("分析中..."):
                 report = analyzer.analyze(profile, jd)
         except RuntimeError as e:

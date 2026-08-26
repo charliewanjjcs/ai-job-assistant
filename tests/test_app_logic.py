@@ -50,6 +50,69 @@ def test_build_profile_availability_unfilled_is_none(monkeypatch):
     assert p.availability is None
 
 
+def test_build_profile_falls_back_to_cache_when_widget_keys_pruned(monkeypatch):
+    """回归：个人资料页填的薪资是 widget 键，跨页导航到职位分析页会被 Streamlit 裁剪掉。
+
+    build_profile 必须能从非 widget 缓存（candidate_profile_cache）回退，否则月薪港币会变「未填/年薪」。
+    本测试故意只放缓存、不放任何 widget 键，模拟被裁剪后的状态。
+    """
+    _set_session(monkeypatch, {
+        # 注意：故意不设置 exp_value / resume / skills 等 widget 键，仅放缓存
+        "candidate_profile_cache": {
+            "resume": "", "skills": "Python", "ideal_job": "后端", "personality": "细心",
+            "city": "深圳",
+            "exp_period_label": "月薪", "exp_currency_label": "HK$ 港币 (HKD)",
+            "exp_value": 20000, "lang_list": [], "availability": "未填写",
+        },
+    })
+    p = m.build_profile()
+    assert p.expected_salary is not None
+    assert p.expected_salary.period.value == "monthly"
+    assert p.expected_salary.currency.value == "HKD"
+    assert p.expected_salary.value == 20000
+    # 其它字段也应能从缓存回退
+    assert p.skills == ["Python"]
+    assert p.availability is None
+
+
+def test_job_analysis_keeps_unsaved_salary(monkeypatch):
+    """进入职位分析页加载候选人资料时，不得把「已填但未保存」的月薪/港币覆盖成 DB 空值。"""
+    import app.views.job_analysis as ja
+
+    # DB 视为未保存（exp_value 为空）
+    monkeypatch.setattr(ja.storage, "load_profile", lambda uid: {
+        "resume": "", "ideal_job": "", "personality": "", "city": "",
+        "exp_period_label": None, "exp_currency_label": None, "exp_value": None,
+    })
+    monkeypatch.setattr(ja.storage, "list_skills", lambda uid: [])
+    # 用户在个人资料页已输入但未保存的「月薪 20000 港币」
+    monkeypatch.setattr(ja.st, "session_state", {
+        "exp_period_label": "月薪", "exp_currency_label": "HK$ 港币 (HKD)", "exp_value": 20000,
+        "_active_page": "job_analysis",
+    })
+    ja._load_candidate_to_session(1)
+    ss = ja.st.session_state
+    assert ss["exp_value"] == 20000                 # 未被 DB 空值冲掉
+    assert ss["exp_period_label"] == "月薪"
+    assert ss["exp_currency_label"] == "HK$ 港币 (HKD)"
+
+
+def test_job_analysis_loads_salary_from_db_when_session_empty(monkeypatch):
+    """全新会话（session_state 无薪资）应从 DB 载入已保存的月薪港币。"""
+    import app.views.job_analysis as ja
+
+    monkeypatch.setattr(ja.storage, "load_profile", lambda uid: {
+        "resume": "", "ideal_job": "", "personality": "", "city": "",
+        "exp_period_label": "月薪", "exp_currency_label": "HK$ 港币 (HKD)", "exp_value": 25000,
+    })
+    monkeypatch.setattr(ja.storage, "list_skills", lambda uid: [])
+    monkeypatch.setattr(ja.st, "session_state", {"_active_page": "job_analysis"})
+    ja._load_candidate_to_session(1)
+    ss = ja.st.session_state
+    assert ss["exp_value"] == 25000
+    assert ss["exp_period_label"] == "月薪"
+
+
 def test_on_jd_text_change_autofills_skills_and_languages(monkeypatch):
     jd = ("任职要求：精通Python，熟悉MySQL、Redis，有Docker、Kubernetes经验者优先；"
           "需具备 attention to detail 与团队合作能力；"

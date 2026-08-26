@@ -34,11 +34,26 @@ class SalaryMatcher:
         notes: List[str] = []
         currency_warning: Optional[str] = None
 
+        # 展示周期：跟随用户预期薪资周期（月薪 -> 月薪；否则年薪）。
+        # 仅影响对外展示口径，内部各值仍统一为年化 CNY。
+        if expected is not None and expected.period in (
+            PayPeriod.MONTHLY, PayPeriod.MONTHLY_13, PayPeriod.MONTHLY_14
+        ):
+            display_period = PayPeriod.MONTHLY
+        else:
+            display_period = PayPeriod.ANNUAL
+
+        # 展示币种：跟随用户预期薪资币种（港币/美元 -> 对应币种；否则人民币）。
+        if expected is not None and expected.currency in (Currency.HKD, Currency.USD):
+            display_currency = expected.currency
+        else:
+            display_currency = Currency.CNY
+
         if (
             (expected and expected.currency == Currency.USD)
             or (company_offer and company_offer.currency == Currency.USD)
         ):
-            currency_warning = "检测到非人民币币种，已按汇率折算为年化人民币进行对比。"
+            currency_warning = "你填写的薪资为美元，已按汇率折算后与市场/报价对比，结果按你的预期币种（美元）呈现。"
 
         verdict = "数据不足"
         gap_vs_expected: Optional[float] = None
@@ -53,9 +68,6 @@ class SalaryMatcher:
                 verdict = "偏高"
             else:
                 verdict = "匹配"
-            notes.append(
-                f"公司报价相对你的预期{'低' if gap < 0 else '高'} {abs(gap):,.0f} 元/年。"
-            )
         elif exp is not None and comp is None:
             verdict = "公司报价缺失"
             notes.append("JD 未提供明确薪资，仅与你预期/市场区间对比。")
@@ -84,6 +96,8 @@ class SalaryMatcher:
             gap_vs_market=gap_vs_market,
             currency_warning=currency_warning,
             notes=notes,
+            display_period=display_period,
+            display_currency=display_currency,
         )
 
 

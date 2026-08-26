@@ -67,6 +67,10 @@ SKILL_VOCAB: List[str] = [
     "Chinese word processing", "中文文字处理", "中文打字",
     "Outlook", "Visio", "WPS", "Access", "Tableau", "Power BI", "PowerBI", "BI",
     "SAP", "Salesforce", "ERP", "CRM",
+    # 金融 / 会计工具（金融背景：Bloomberg、VBA、万得等）
+    "Bloomberg", "Bloomberg Terminal", "VBA", "Visual Basic for Applications",
+    "FactSet", "Wind", "万得", "Capital IQ", "S&P Capital IQ", "Eikon", "Refinitiv",
+    "QuickBooks", "Xero", "Sage",
     # 设计 / 产品 / 运营工具
     "Figma", "Axure", "Sketch", "Photoshop", "Illustrator", "Xmind",
     "原型设计", "产品设计", "UI设计", "UI 设计",
@@ -226,18 +230,23 @@ def _dedupe_subsumed(found: List[str]) -> List[str]:
     return sorted(kept, key=lambda x: order[x])
 
 
-def extract_skills(text: str) -> List[str]:
+def extract_skills(text: str, include_soft: bool = True) -> List[str]:
     """从文本抽取技能（去重、保序、语言原样保留）。
 
     仅以「词库」为边界做逐词匹配，**不会**把「技能」标签后的整段文字当作技能。
     英文短词（Git 等）使用单词边界匹配，避免命中 GitHub 等长词造成误抓。
     同概念的中英文词条都收录，命中哪个就输出哪个（不翻译、不双语）——
     因此中文简历自然填中文、英文简历填英文，JD 文本中的技能同理。
+
+    `include_soft=False` 时只抽硬技能（SKILL_VOCAB）、排除软技能（SOFT_SKILL_VOCAB），
+    供 JD「必需/加分技能」栏使用——软技能应单独由 `extract_soft_skills_heuristic`
+    抽取进「软技能/特质」栏，避免 detail-oriented / flexibility 等混进必需技能。
     """
     if not text:
         return []
+    vocab = SKILL_VOCAB + (SOFT_SKILL_VOCAB if include_soft else [])
     found: List[str] = []
-    for s in SKILL_VOCAB + SOFT_SKILL_VOCAB:
+    for s in vocab:
         if s not in found and _token_present(text, s):
             found.append(s)
     return _dedupe_by_family(_dedupe_subsumed(found))
@@ -525,7 +534,7 @@ def parse_jd_text(text: str) -> dict:
             "required_skills": [], "preferred_skills": [],
             "required_languages": [], "prefers_immediate": False,
         }
-    skills = extract_skills(text)
+    skills = extract_skills(text, include_soft=False)
     required: List[str] = []
     preferred: List[str] = []
     for line in text.splitlines():

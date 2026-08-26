@@ -14,7 +14,7 @@ class DeepSeekClient:
     def __init__(self, api_key: str | None = None, base_url: str | None = None, model: str | None = None):
         self.api_key = api_key or os.getenv("DEEPSEEK_API_KEY")
         self.base_url = base_url or os.getenv("DEEPSEEK_BASE_URL", "https://api.deepseek.com")
-        self.model = model or os.getenv("DEEPSEEK_MODEL", "deepseek-chat")
+        self.model = model or os.getenv("DEEPSEEK_MODEL", "deepseek-v4-flash")
         self._client: OpenAI | None = None
 
     def _ensure(self) -> None:

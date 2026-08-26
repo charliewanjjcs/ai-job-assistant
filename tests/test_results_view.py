@@ -11,7 +11,8 @@ if ROOT not in sys.path:
 from streamlit.testing.v1 import AppTest
 
 import app.storage as storage
-from core.models import Report, SalaryAnalysis, SkillMatchResult
+from app.views.results import HISTORY_COLUMN_WIDTHS
+from core.models import Report, SalaryAnalysis, SkillMatchResult, Currency, PayPeriod
 
 _SCRIPT = """
 import streamlit as st
@@ -27,7 +28,12 @@ def _make_report(role="后端", company="A", score=88.0, verdict="符合预期")
     return Report(
         role=role,
         company=company,
-        skill_match=SkillMatchResult(match_score=score, matched=["Python"]),
+        skill_match=SkillMatchResult(
+            match_score=score,
+            matched=["Python"],
+            missing_required=["Go"],
+            missing_preferred=["沟通能力"],
+        ),
         salary_analysis=SalaryAnalysis(verdict=verdict, expected=300000.0),
         generated_at="2026-08-19T10:00:00",
     )
@@ -57,9 +63,37 @@ def test_results_page_smoke(db):
     # 右侧详情应渲染出被默认选中的 rid2 的 role（前端）
     all_md = " ".join(str(m.value) for m in at.markdown)
     assert "前端" in all_md
-    # 历史表「分析时间」应在最右列（item 9 调整）
-    df = at.dataframe[0]
-    cols = list(df.value.columns)
+    # 能力匹配栏标签已对齐「职位详情」页术语：技能匹配 / 缺失-必需技能 / 缺失-软技能/特质
+    assert "技能匹配" in all_md
+    assert "缺失-必需技能" in all_md
+    assert "缺失-软技能/特质" in all_md
+
+
+def test_results_page_salary_hkd_display(db):
+    """预期填港币 -> 薪资三栏应按港币展示（HK$ 20,000），而非人民币/年化。"""
+    uid = storage.get_or_create_user("wechat", "wx-hkd")
+    report = Report(
+        role="后端", company="A",
+        skill_match=SkillMatchResult(match_score=80.0, matched=["Python"]),
+        salary_analysis=SalaryAnalysis(
+            verdict="符合预期",
+            expected=20000 * 12 * 0.92,  # 港币 20000/月 -> 年化 CNY
+            display_period=PayPeriod.MONTHLY,
+            display_currency=Currency.HKD,
+        ),
+        generated_at="2026-08-25T10:00:00",
+    )
+    storage.save_analysis_result(uid, report, jd_text="JD原文")
+    at = AppTest.from_string(_SCRIPT, default_timeout=20)
+    at.session_state["user_id"] = uid
+    at.session_state["user_display"] = "测试用户"
+    at.run()
+    assert not at.exception
+    all_md = " ".join(str(m.value) for m in at.markdown)
+    assert "HK$" in all_md
+    assert "20,000" in all_md
+    # 历史表「分析时间」应在最右列（列序由 HISTORY_COLUMN_WIDTHS 决定）
+    cols = list(HISTORY_COLUMN_WIDTHS.keys())
     assert cols[-1] == "分析时间", f"分析时间应在最右列，实际列序={cols}"
     # 「当时粘贴的 JD 原文」回显已移除（不再展示 JD 原文）
     all_code = " ".join(str(c.value) for c in at.code)
@@ -75,3 +109,52 @@ def test_results_page_empty(db):
     assert not at.exception
     all_info = " ".join(str(i.value) for i in at.info)
     assert "还没有分析结果" in all_info
+
+
+def test_history_table_fixed_widths():
+    """历史表列宽（像素，由 column_config.width 应用）：职位/公司 150、薪资结论 95、技能匹配/分析时间 75。"""
+    assert HISTORY_COLUMN_WIDTHS == {
+        "职位": 150,
+        "公司": 150,
+        "技能匹配": 75,
+        "薪资结论": 95,
+        "分析时间": 75,
+    }
+    # 列顺序保持一致
+    assert list(HISTORY_COLUMN_WIDTHS.keys()) == [
+        "职位", "公司", "技能匹配", "薪资结论", "分析时间"
+    ]
+
+
+def test_history_table_renders_with_fixed_columns(db):
+    """冒烟：带数据时历史表以原生 dataframe（可点击选中）渲染，列序与预期一致。"""
+    uid = storage.get_or_create_user("wechat", "wx-cols")
+    storage.save_analysis_result(uid, _make_report(role="后端", company="A"), jd_text="JD")
+    at = AppTest.from_string(_SCRIPT, default_timeout=20)
+    at.session_state["user_id"] = uid
+    at.session_state["user_display"] = "测试用户"
+    at.run()
+    assert not at.exception
+    df = at.dataframe[0]
+    assert list(df.value.columns) == [
+        "职位", "公司", "技能匹配", "薪资结论", "分析时间"
+    ]
+    # 列宽（像素）配置存在且为 5 列
+    assert len(HISTORY_COLUMN_WIDTHS) == 5
+
+
+def test_detail_title_role_and_company_on_separate_lines(db):
+    """详情大标题：岗位名称与公司在两行，不得用「@」连接。"""
+    uid = storage.get_or_create_user("wechat", "wx-title")
+    rid = storage.save_analysis_result(
+        uid, _make_report(role="后端开发工程师", company="测试科技有限公司"), jd_text="JD")
+    at = AppTest.from_string(_SCRIPT, default_timeout=20)
+    at.session_state["user_id"] = uid
+    at.session_state["user_display"] = "测试用户"
+    at.session_state["_pending_result_id"] = rid
+    at.run()
+    assert not at.exception
+    md = " ".join(str(x.value) for x in at.markdown)
+    assert "#### 后端开发工程师" in md
+    assert "##### 测试科技有限公司" in md
+    assert "@" not in md
