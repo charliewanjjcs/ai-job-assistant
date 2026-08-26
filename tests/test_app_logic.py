@@ -9,7 +9,11 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if ROOT not in sys.path:
     sys.path.insert(0, ROOT)
 
+import streamlit as st
+
+import app.auth as auth
 import app.main as m
+import app.storage as storage
 
 
 def _set_session(monkeypatch, d):
@@ -137,3 +141,45 @@ def test_on_jd_text_change_empty_no_crash(monkeypatch):
     _set_session(monkeypatch, {"jd_text": ""})
     m.on_jd_text_change()  # 空文本应直接返回，不抛异常
     assert m.st.session_state.get("jd_req") is None
+
+
+def _patch_session(monkeypatch, d):
+    """用给定 dict 作为 st.session_state（用 monkeypatch 自动恢复，避免污染后续测试）。"""
+    monkeypatch.setattr(st, "session_state", d)
+
+
+def test_session_device_id_stable_within_session(monkeypatch):
+    """同一浏览器会话内，session_device_id 应稳定不变（重登录回到同一账户）。"""
+    sess = {}
+    with monkeypatch.context() as mp:
+        _patch_session(mp, sess)
+        id1 = auth.session_device_id()
+        id2 = auth.session_device_id()
+    assert id1.startswith("dev-")
+    assert id1 == id2
+
+
+def test_social_login_isolates_users_across_sessions(tmp_path, monkeypatch):
+    """两个不同浏览器会话用同一社交按钮登录，必须落到不同 user_id（修复共享简历串号）。"""
+    orig_db = storage.get_db_path()
+    storage.set_db_path(str(tmp_path / "app.db"))
+    storage.init_db()  # 临时库需先建表
+    try:
+        sess_a, sess_b = {}, {}
+        # 会话 A：连续两次点击微信，应复用同一账户
+        with monkeypatch.context() as mp:
+            _patch_session(mp, sess_a)
+            uid_a1 = auth.login_provider("wechat", auth.session_device_id())
+            uid_a2 = auth.login_provider("wechat", auth.session_device_id())
+        assert uid_a1 == uid_a2
+        # 会话 B：另一个浏览器会话，必须得到不同的 user_id
+        with monkeypatch.context() as mp:
+            _patch_session(mp, sess_b)
+            uid_b = auth.login_provider("wechat", auth.session_device_id())
+        assert uid_b != uid_a1
+        # 验证资料确实按 user_id 隔离：A 存的简历 B 读不到
+        storage.save_profile(uid_a1, {"resume": "A 的简历"})
+        assert (storage.load_profile(uid_a1) or {}).get("resume") == "A 的简历"
+        assert (storage.load_profile(uid_b) or {}).get("resume") is None
+    finally:
+        storage.set_db_path(orig_db)

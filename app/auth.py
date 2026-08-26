@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import os
 import random
+import uuid
 
 import streamlit as st
 
@@ -29,6 +30,22 @@ _SIM_ID = "simulated"
 # ─────────────────────────────────────────────────────────────────────────────
 # 当前会话
 # ─────────────────────────────────────────────────────────────────────────────
+def session_device_id() -> str:
+    """为本浏览器会话生成稳定的唯一标识（模拟登录用，确保多用户隔离）。
+
+    Streamlit 的 st.session_state 按浏览器会话隔离；首次调用时生成随机 id 并缓存进
+    session_state，同一会话内复用（重登录回到同一账户，资料可延续），不同浏览器/设备
+    因 session_state 不同会得到不同的 id（互不串号，修复「共享简历」问题）。
+
+    注意：模拟社交登录无真实 OAuth，故该身份与浏览器绑定——清除浏览器存储或换新设备
+    会进入全新账户（数据不跨设备）。需要跨设备持久账户请用手机号/邮箱登录（已按真实
+    手机号/邮箱隔离）。
+    """
+    if "_device_id" not in st.session_state:
+        st.session_state["_device_id"] = f"dev-{uuid.uuid4().hex}"
+    return st.session_state["_device_id"]
+
+
 def current_user_id() -> int | None:
     return st.session_state.get("user_id")
 
