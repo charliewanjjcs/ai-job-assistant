@@ -74,7 +74,16 @@ def _remove_skill(user_id: int, skill: str) -> None:
 
 def skill_editor(user_id: int) -> None:
     """渲染技能编辑器（标签展示 + 输入联想 + 增删），直接读写技能库。"""
-    existing = _refresh_skills(user_id)
+    # 渲染优先用 session_state["skills"] 缓存（个人资料页进入时已用 list_skills 载入），
+    # 避免在每次页面重渲染（文本框输入/回车都会触发 rerun）时重复跨 Neon 读库——
+    # 未上线连接池时，每次读库都新建一条到新加坡的 TLS 连接，导致逐栏编辑卡 ~3 秒。
+    # 仅增删技能（_add_skill/_remove_skill 内部）才回源 DB 刷新缓存。
+    if "skills" in st.session_state:
+        existing = [
+            s.strip() for s in st.session_state["skills"].split(",") if s.strip()
+        ]
+    else:
+        existing = _refresh_skills(user_id)
 
     if existing:
         # 流式 chip 布局：只占可用区 3/4，右侧 1/4 留空，放不下自动换行
