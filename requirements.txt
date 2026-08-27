@@ -13,3 +13,5 @@ pypdf>=4.0
 playwright>=1.40
 # ===== 第四步：外部薪资 API（HTTP 请求）=====
 httpx>=0.27
+# ===== 可选：云端 Postgres（设置 DATABASE_URL 时启用，未设置则退回本地 SQLite）=====
+psycopg2-binary>=2.9
