@@ -33,6 +33,7 @@ DATABASE_URL = os.getenv("DATABASE_URL")
 try:
     import psycopg2
     import psycopg2.extras
+    import psycopg2.pool
 
     _HAS_PG = True
 except Exception:  # pragma: no cover - 取决于运行环境是否安装 psycopg2
@@ -236,8 +237,10 @@ class _PgConn:
     execute 内部新建 cursor 并返回它，调用方继续 .fetchone() / .fetchall() / .rowcount 即可。
     """
 
-    def __init__(self, raw):
+    def __init__(self, raw, returner=None):
         self._raw = raw
+        # 由连接池提供时，close() 应把连接放回池而非真正关闭（否则连接泄漏）
+        self._returner = returner
 
     def execute(self, sql: str, params=None):
         cur = self._raw.cursor()
@@ -256,17 +259,62 @@ class _PgConn:
         self._raw.rollback()
 
     def close(self):
-        self._raw.close()
+        if self._returner:
+            self._returner(self._raw)
+        else:
+            self._raw.close()
+
+
+# ── Postgres 连接池（避免每次交互都新建 TLS 连接导致页面卡顿）──
+_PG_POOL = None
+
+
+def _get_pool():
+    """惰性创建进程级连接池（线程安全）。同进程内复用，避免反复握手。"""
+    global _PG_POOL
+    if _PG_POOL is None:
+        _PG_POOL = psycopg2.pool.SimpleConnectionPool(
+            1, 5, DATABASE_URL, connect_timeout=10,
+            cursor_factory=psycopg2.extras.RealDictCursor,
+        )
+    return _PG_POOL
+
+
+def _safe_putconn(raw):
+    """把连接放回池；池异常时退化为直接关闭，避免连接泄漏。"""
+    try:
+        _get_pool().putconn(raw)
+    except Exception:
+        try:
+            raw.close()
+        except Exception:
+            pass
+
+
+def _acquire_pg():
+    """从池取一个健康连接；若取到的连接已断开，回收后重试一次。"""
+    pool = _get_pool()
+    raw = pool.getconn()
+    try:
+        cur = raw.cursor()
+        cur.execute("SELECT 1")
+        return raw
+    except psycopg2.Error:
+        try:
+            pool.putconn(raw, close=True)
+        except Exception:
+            pass
+        return pool.getconn()
 
 
 def _connect():
     """返回数据库连接的抽象句柄（SQLite / Postgres 自动适配）。"""
     if is_postgres():
-        raw = psycopg2.connect(DATABASE_URL, connect_timeout=10)
-        # 统一用 RealDictCursor，使行可 dict(row) 且按列名取值
-        raw.cursor_factory = psycopg2.extras.RealDictCursor
-        # psycopg2 连接无 .execute()，包装为与 sqlite3 一致的接口（否则 init_db/查询即崩）
-        return _PgConn(raw)
+        # 从连接池取已建好的连接（避免每次交互都新建 TLS 连接 → 页面卡顿）
+        raw = _acquire_pg()
+        # psycopg2 连接无 .execute()，包装为与 sqlite3 一致的接口；
+        # close() 通过 returner 把连接放回池而非真正关闭
+        return _PgConn(raw, _safe_putconn)
 
     # SQLite：确保目录可写（避免 "readonly database"）；WAL + busy_timeout 降低写锁冲突
     _db_dir = os.path.dirname(DB_PATH)

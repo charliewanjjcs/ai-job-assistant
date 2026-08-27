@@ -56,8 +56,28 @@ class _FakeExtras:
     RealDictCursor = object
 
 
+class _FakeSimpleConnectionPool:
+    """兼容 SimpleConnectionPool 的最小伪实现：getconn/putconn 仅计数与回收。"""
+
+    def __init__(self, *args, **kwargs):
+        self.created = 0
+
+    def getconn(self):
+        self.created += 1
+        return _FakeRawConn()
+
+    def putconn(self, conn, close=False):
+        if close:
+            conn.close()
+
+
+class _FakePoolModule:
+    SimpleConnectionPool = _FakeSimpleConnectionPool
+
+
 class _FakePsycopg2:
     extras = _FakeExtras()
+    pool = _FakePoolModule()
 
     def connect(self, *args, **kwargs):
         return _FakeRawConn()
@@ -102,8 +122,9 @@ def test_execute_transforms_placeholder_on_postgres(monkeypatch):
     _enable_postgres(monkeypatch)
     conn = storage._connect()
     storage._execute(conn, "SELECT * FROM users WHERE id=?", (1,))
-    assert conn._raw.all_calls[0][0] == "SELECT * FROM users WHERE id=%s"
-    assert conn._raw.all_calls[0][1] == (1,)
+    # 注意：_connect 内部的健康探测会先执行 SELECT 1，故断言最后一条为用户查询
+    assert conn._raw.all_calls[-1][0] == "SELECT * FROM users WHERE id=%s"
+    assert conn._raw.all_calls[-1][1] == (1,)
 
 
 def test_insert_returning_id_on_postgres(monkeypatch):
@@ -118,3 +139,21 @@ def test_insert_returning_id_on_postgres(monkeypatch):
     cur = conn._raw.last_cursor
     assert "RETURNING id" in cur.calls[0][0]
     assert cur.calls[0][0].count("%s") == 1
+
+
+def test_pg_pool_is_singleton_and_reused(monkeypatch):
+    """_get_pool 返回进程级单例；多次 _connect 走同一池（复用连接，而非每次新建）。"""
+    _enable_postgres(monkeypatch)
+    storage._PG_POOL = None  # 清缓存，确保从零创建
+    p1 = storage._get_pool()
+    p2 = storage._get_pool()
+    assert p1 is p2  # 单例：只建一个池
+    # 模拟两次交互的两次 _connect()，都应成功返回包装连接并可在 close 时放回池
+    c1 = storage._connect()
+    c2 = storage._connect()
+    assert isinstance(c1, storage._PgConn)
+    assert isinstance(c2, storage._PgConn)
+    c1.close()
+    c2.close()  # 不应抛异常（放回池而非真正关闭）
+    # 池的 getconn 被调用了 2 次，证明走池而非每次 psycopg2.connect 新建
+    assert p1.created == 2
