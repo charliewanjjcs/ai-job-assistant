@@ -46,7 +46,7 @@
 | 结果标签页 | `app/components/result_tabs.py` | `render_salary`/`render_skill`/`render_language`/`render_availability`/`render_improve`/`render_career`/`render_daily`/`render_interview`/`render_report` | active | — |
 | 登录侧边栏 | `app/components/auth_sidebar.py` | `render_auth_sidebar()`（在 `st.sidebar` 上下文内、导航链接之前调用，渲染登录/退出区） | active | — |
 | 个人资料页 | `app/views/profile.py` | `render()`（DB→session_state、技能编辑器、语言、薪资、性格、保存；上传 PDF 写 `tempfile.mkstemp` 唯一临时文件） | active | — |
-| 职位分析页 | `app/views/job_analysis.py` | `render()`（require_login + 自动载候选人资料 + JD 粘贴 on_change 回填 + 「开始分析」→ `_show_loading_overlay()` 居中浮窗（emoji 喝水动效，纯 CSS、零开销）+ `analyze` + `save_analysis_result` + `_pending_result_id` + `st.switch_page` 跳转结果页；失败存 `_analysis_error` 后 `st.rerun` 展示错误并清浮窗） | active | — |
+| 职位分析页 | `app/views/job_analysis.py` | `render()`（require_login + 自动载候选人资料 + JD 粘贴 on_change 回填 + 「开始分析」→ `st.spinner("正在分析中，喝口水，稍等一下…")` + `analyze` + `save_analysis_result` + `_pending_result_id` + `st.switch_page` 跳转结果页） | active | — |
 | 分析结果页 | `app/views/results.py` | `render()`（左右分栏：左 `st.dataframe` 单行选中切换 + 删除/清空，右 `render_report` 重渲染；`_pending_result_id` 读后即清实现跳转默认选中；**列表与详情均加 session_state 缓存**——进入页 `_active_page` 守卫载一次列表、切行按 `uid:selected_id` 缓存详情，删除/清空 pop 缓存失效，避免每次 rerun 重复读 Neon） | active | — |
 
 > **UI 产品决策（沿用 skill-vocab-soft-locked 及之前锁定）**：薪资左计薪方式/中纯数字/右币种三栏（年薪单位「元」）；JD 原文粘贴框位于岗位标题之上，on_change 回填必需/加分技能、语言、到岗；计薪方式/币种/到岗 selectbox 仅可选不可编辑；语言区初始仅「+ 添加语言」按钮；JD 语言要求标题「语言要求」；性格提示在 placeholder；技能按同义/上下位族去重（`split_skills`，不加逗号分隔标签）；词库含 communication/interpersonal/人际交往 等软技能。
