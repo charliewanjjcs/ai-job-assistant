@@ -202,9 +202,19 @@ def _split_ddl(ddl: str) -> list[str]:
     return [s.strip() for s in ddl.split(";") if s.strip()]
 
 
+# 记录「已完成建表」的后端定位，避免每次 Streamlit rerun 都重复执行 DDL。
+# Postgres 下 11 条建表/建索引语句 = 11 次到 Neon 的网络往返（约 2 秒），
+# 而 run_app 每次 rerun 都调 init_db，会造成全局交互卡顿；这里同进程内只跑一次。
+_INIT_DONE_KEY: tuple | None = None
+
+
 def init_db(db_path: str | None = None) -> None:
-    """创建表（若不存在）。"""
+    """创建表（若不存在）。幂等；同进程内对同一后端只执行一次 DDL。"""
+    global _INIT_DONE_KEY
     if is_postgres():
+        key = ("pg", DATABASE_URL)
+        if _INIT_DONE_KEY == key:
+            return
         conn = _connect()
         try:
             for stmt in _split_ddl(_PG_DDL):
@@ -212,9 +222,13 @@ def init_db(db_path: str | None = None) -> None:
             conn.commit()
         finally:
             conn.close()
+        _INIT_DONE_KEY = key
         return
 
     path = db_path or DB_PATH
+    key = ("sqlite", path)
+    if _INIT_DONE_KEY == key:
+        return
     os.makedirs(os.path.dirname(path), exist_ok=True)
     conn = sqlite3.connect(path)
     try:
@@ -222,6 +236,7 @@ def init_db(db_path: str | None = None) -> None:
         conn.commit()
     finally:
         conn.close()
+    _INIT_DONE_KEY = key
 
 
 # ─────────────────────────────────────────────────────────────────────────────
