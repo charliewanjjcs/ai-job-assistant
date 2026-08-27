@@ -121,6 +121,9 @@ def render() -> None:
                     # 解析出的技能直接写入个人技能库
                     for s in prof.skills:
                         storage.add_skill(uid, s, is_custom=(s.lower() not in _VOCAB_SET))
+                    # 同步技能缓存：skill_editor 渲染只读 session_state["skills"]，
+                    # 这里若不同步，刚写入 DB 的技能不会在下方技能编辑器显示（线上复现「抓不到技能」）。
+                    st.session_state["skills"] = ", ".join(storage.list_skills(uid))
                     st.success("已从 PDF 提取并填充字段，可手动调整。")
             except Exception as e:
                 st.error(f"PDF 解析失败：{e}")

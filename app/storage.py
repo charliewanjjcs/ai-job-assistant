@@ -41,6 +41,8 @@ except Exception:  # pragma: no cover - 取决于运行环境是否安装 psycop
 
 from core.models import Report  # noqa: E402
 
+from app.skill_norm import skill_dedupe_key  # noqa: E402
+
 
 def is_postgres() -> bool:
     """当前是否使用 Postgres 后端。"""
@@ -567,18 +569,20 @@ def list_skills(user_id: int) -> list[str]:
 
 
 def add_skill(user_id: int, skill: str, is_custom: bool = True) -> bool:
-    """添加技能（按大小写不敏感去重，避免 Excel/excel 重复）。返回是否新增。"""
+    """添加技能（按「去重键」去重，避免 Excel/excel、detail-oriented/detail oriented、
+    attention to detail/attention to details 这类大小写/连字符/复数差异重复）。返回是否新增。"""
     skill = (skill or "").strip()
     if not skill:
         return False
     conn = _connect()
     try:
-        exists = _execute(
-            conn,
-            "SELECT 1 FROM skill_library WHERE user_id=? AND lower(skill)=lower(?)",
-            (user_id, skill),
-        ).fetchone()
-        if exists:
+        # 去重键在 Python 侧计算（DB 不存规范化列），故取回该用户全部技能逐条比较。
+        # 技能库规模小（通常几十条），成本可忽略。
+        key = skill_dedupe_key(skill)
+        existing = _execute(
+            conn, "SELECT skill FROM skill_library WHERE user_id=?", (user_id,)
+        ).fetchall()
+        if any(skill_dedupe_key(r["skill"]) == key for r in existing):
             return False
         _execute(
             conn,

@@ -11,6 +11,7 @@ from __future__ import annotations
 import streamlit as st
 
 import app.storage as storage
+from app.skill_norm import skill_dedupe_key
 from core.parsers import SKILL_VOCAB, SOFT_SKILL_VOCAB
 
 # 合并词库并去重（大小写不敏感），保持出现顺序
@@ -29,24 +30,35 @@ def suggest_skills(query: str, vocab: list[str], existing: list[str],
 
     - 前缀命中（startswith）排在子串命中之前；
     - 大小写不敏感；
-    - 排除已添加项；
-    - 结果去重、保序、截断到 limit。
+    - 排除已添加项（按「去重键」比较：忽略大小写/连字符/复数 s，
+      即已加 detail-oriented 就不再候选 detail oriented、已加 attention to detail
+      就不再候选 attention to details）；
+    - 候选结果本身也按去重键去重，避免同时列出 detail-oriented / detail oriented 这类近重复。
     """
     q = (query or "").strip().lower()
     if not q:
         return []
-    excl = {e.lower() for e in existing}
+    excl = {skill_dedupe_key(e) for e in existing}
     prefix: list[str] = []
     sub: list[str] = []
     for s in vocab:
-        ns = s.lower()
-        if ns in excl:
+        if skill_dedupe_key(s) in excl:
             continue
+        ns = s.lower()
         if ns.startswith(q):
             prefix.append(s)
         elif q in ns:
             sub.append(s)
-    return (prefix + sub)[:limit]
+    # 候选内部按去重键去重（保序，保留词库中先出现的规范写法）
+    seen: set = set()
+    out: list[str] = []
+    for s in prefix + sub:
+        k = skill_dedupe_key(s)
+        if k in seen:
+            continue
+        seen.add(k)
+        out.append(s)
+    return out[:limit]
 
 
 def _refresh_skills(user_id: int) -> list[str]:
@@ -120,8 +132,8 @@ def skill_editor(user_id: int) -> None:
                         s, key=f"skill_add_{i}_{s}",
                         on_click=_add_skill, args=(user_id, s),
                     )
-    # 自定义：输入了不在词库且非空的内容时，提供「添加自定义」入口
-    if q and q not in existing:
+    # 自定义：输入了非空、且与已有技能「去重键」不同（忽略大小写/连字符/复数 s）时提供入口
+    if q and not any(skill_dedupe_key(q) == skill_dedupe_key(e) for e in existing):
         in_vocab = q in VOCAB
         label = f"添加为自定义技能：{q}" if not in_vocab else f"添加到技能库：{q}"
         st.button(label, key="skill_add_custom", on_click=_add_skill, args=(user_id, q))

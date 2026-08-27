@@ -133,6 +133,21 @@ def test_skill_library_add_list_remove(db):
     assert "detail-oriented" not in storage.list_skills(uid)
 
 
+def test_add_skill_dedup_by_dedupe_key(db):
+    """添加技能按「去重键」去重：连字符/复数 s 差异视为同一技能，语义不同可共存。"""
+    uid = storage.get_or_create_user("wechat", "wx-norm")
+    assert storage.add_skill(uid, "detail-oriented", is_custom=True) is True
+    # 连字符差异（detail oriented）视为同一技能，不重复添加
+    assert storage.add_skill(uid, "detail oriented", is_custom=True) is False
+    # 复数 s 差异（attention to details）视为同一技能，不重复添加
+    assert storage.add_skill(uid, "attention to detail", is_custom=True) is True
+    assert storage.add_skill(uid, "attention to details", is_custom=True) is False
+    # 语义不同（detail-oriented vs attention to detail）可共存
+    assert "detail-oriented" in storage.list_skills(uid)
+    assert "attention to detail" in storage.list_skills(uid)
+    assert len(storage.list_skills(uid)) == 2
+
+
 def test_verification_code_expire_and_reuse(db):
     phone = "13900000000"
     storage.save_verification_code(phone, "123456", ttl_seconds=-1)  # 已过期

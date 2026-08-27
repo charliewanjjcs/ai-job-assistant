@@ -6,7 +6,7 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if ROOT not in sys.path:
     sys.path.insert(0, ROOT)
 
-from app.components.skill_editor import suggest_skills
+from app.components.skill_editor import suggest_skills, skill_dedupe_key
 
 VOCAB = [
     "Python", "Excel", "data analysis", "detail-oriented", "attention to detail",
@@ -52,3 +52,32 @@ def test_limit_truncation():
 def test_existing_special_chars():
     res = suggest_skills("go", VOCAB, ["Go 语言"])
     assert "Go 语言" not in res
+
+
+# ── 技能去重键：连字符 / 复数 s 归一化，但不合并语义不同的技能 ──
+def test_dedupe_key_hyphen_and_plural():
+    # 连字符差异 → 同一键
+    assert skill_dedupe_key("detail-oriented") == skill_dedupe_key("detail oriented")
+    # 复数 s 差异 → 同一键
+    assert skill_dedupe_key("attention to detail") == skill_dedupe_key("attention to details")
+    # 语义不同 → 不同键
+    assert skill_dedupe_key("detail-oriented") != skill_dedupe_key("attention to detail")
+    # 大小写不敏感
+    assert skill_dedupe_key("Excel") == skill_dedupe_key("excel")
+
+
+def test_suggest_dedups_near_duplicate_candidates():
+    vocab = ["detail-oriented", "detail oriented", "attention to detail", "attention to details"]
+    res = suggest_skills("detail", vocab, [])
+    # 近重复去重后只剩两个：detail-oriented 与 attention to detail（保留词库中先出现的写法）
+    assert res == ["detail-oriented", "attention to detail"]
+
+
+def test_suggest_excludes_existing_by_dedupe_key():
+    vocab = ["detail-oriented", "detail oriented", "attention to detail"]
+    # 已加 detail oriented，则 detail-oriented / detail oriented 都不再候选（连字符归一）
+    res = suggest_skills("detail", vocab, ["detail oriented"])
+    assert "detail-oriented" not in res
+    assert "detail oriented" not in res
+    assert "attention to detail" in res
+
