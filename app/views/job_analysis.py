@@ -28,6 +28,47 @@ from modules.salary_api import DeepSeekSalaryProvider, TightenedSalaryProvider
 from core.salary import RuleBasedSalaryProvider
 
 
+# 「开始分析」的加载浮窗（纯前端 CSS 动画，不增加任何网络/计算开销）：
+# 屏幕中央弹出半透明遮罩 + 卡片，卡片上是「卡通人物喝水」的 emoji 动效（😊 上下浮动、
+# 🧋 左右摇晃、💧 水滴依次下落），配上提示文字。分析结束即跳转结果页，浮窗随页面切换消失。
+_LOADING_OVERLAY_HTML = """
+<style>
+@keyframes wb-sip { 0%,100%{transform:rotate(-7deg)} 50%{transform:rotate(7deg)} }
+@keyframes wb-bob { 0%,100%{transform:translateY(0)} 50%{transform:translateY(-4px)} }
+@keyframes wb-drop { 0%{transform:translateY(0);opacity:0} 25%{opacity:1} 100%{transform:translateY(26px);opacity:0} }
+.wb-mask {
+  position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+  background: rgba(30, 42, 30, 0.35);
+  display: flex; align-items: center; justify-content: center; z-index: 9999;
+}
+.wb-card {
+  background: #ffffff; border-radius: 18px; padding: 1.8rem 2.2rem;
+  box-shadow: 0 16px 48px rgba(0,0,0,0.22); text-align: center; min-width: 280px;
+}
+.wb-scene { display: flex; align-items: center; justify-content: center; gap: 6px; font-size: 56px; line-height: 1; }
+.wb-face { display: inline-block; animation: wb-bob 1.4s ease-in-out infinite; }
+.wb-drink { display: inline-block; animation: wb-sip 1.1s ease-in-out infinite; }
+.wb-drops { font-size: 20px; letter-spacing: 8px; height: 26px; margin-top: 2px; }
+.wb-drops span { display: inline-block; animation: wb-drop 1.5s ease-in infinite; }
+.wb-drops span:nth-child(2) { animation-delay: 0.4s; }
+.wb-drops span:nth-child(3) { animation-delay: 0.8s; }
+.wb-text { margin-top: 0.8rem; font-size: 16px; font-weight: 600; color: #333; }
+</style>
+<div class="wb-mask">
+  <div class="wb-card">
+    <div class="wb-scene"><span class="wb-face">😊</span><span class="wb-drink">🧋</span></div>
+    <div class="wb-drops"><span>💧</span><span>💧</span><span>💧</span></div>
+    <div class="wb-text">正在分析中，喝口水，马上就好……</div>
+  </div>
+</div>
+"""
+
+
+def _show_loading_overlay() -> None:
+    """渲染加载浮窗。需在阻塞的 analyze() 之前调用，浮窗才会在分析期间显示。"""
+    st.markdown(_LOADING_OVERLAY_HTML, unsafe_allow_html=True)
+
+
 def _load_candidate_to_session(uid: int) -> None:
     """把已保存的候选人资料载入 session_state，供 build_profile 使用。
 
@@ -145,6 +186,11 @@ def render() -> None:
             lang_manager("jd_lang_list", "")
             st.checkbox("JD 偏好「尽快到岗 / Immediate available」", key="jd_prefers_immediate")
 
+    # 上一次「开始分析」失败的错误提示（失败后 rerun 展示；成功则不会存在）
+    _err = st.session_state.pop("_analysis_error", None)
+    if _err:
+        st.error(f"分析失败：{_err}")
+
     if st.button("开始分析", type="primary"):
         # 跨页导航会裁剪个人资料页的 widget 键，这里再从 DB 把已保存值并入缓存（空值不覆盖），
         # 与 build_profile 的缓存回退配合，确保「填了月薪港币」在分析时不被清成未填/年薪
@@ -159,17 +205,14 @@ def render() -> None:
             base_salary = RuleBasedSalaryProvider() if demo else DeepSeekSalaryProvider(llm=llm)
             salary = TightenedSalaryProvider(base_salary)
             analyzer = CoreAnalyzer(llm=llm, salary_provider=salary)
-            # 加载动画（st.spinner 是被动遮罩，不增加任何网络/计算开销，只在大模型调用期间显示）
-            spin_msg = (
-                "正在分析中，请稍候…"
-                if demo
-                else "正在分析中，请稍候…（首次调用大模型约需 10~30 秒）"
-            )
-            with st.spinner(spin_msg):
-                report = analyzer.analyze(profile, jd)
+            # 加载浮窗：必须在阻塞的 analyze() 之前渲染，分析期间才显示「喝水」动效；
+            # 完成后 st.switch_page 跳结果页，浮窗随页面切换消失。
+            _show_loading_overlay()
+            report = analyzer.analyze(profile, jd)
         except RuntimeError as e:
-            st.error(f"分析失败：{e}")
-            return
+            # 失败时把错误存 session_state 后 rerun，清掉浮窗并在下次渲染展示错误（避免浮窗残留）
+            st.session_state["_analysis_error"] = str(e)
+            st.rerun()
         # 持久化 + 跳转「分析结果」页并默认选中刚分析的记录；同时请求进入后自动收起左侧控制栏
         new_id = storage.save_analysis_result(uid, report, jd_text=jd.raw_text)
         st.session_state["_pending_result_id"] = new_id
