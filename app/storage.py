@@ -226,13 +226,47 @@ def init_db(db_path: str | None = None) -> None:
 # ─────────────────────────────────────────────────────────────────────────────
 # 连接与执行辅助
 # ─────────────────────────────────────────────────────────────────────────────
+class _PgConn:
+    """psycopg2 连接的轻量包装，暴露与 sqlite3 一致的接口
+    （.execute() / .executemany() / .commit() / .rollback() / .close()），
+    使业务代码无需关心后端差异。
+
+    psycopg2 的连接对象本身**没有** .execute() 方法（必须 conn.cursor().execute()），
+    而 sqlite3 连接自带 .execute()。这里统一成「连接即执行」的接口，
+    execute 内部新建 cursor 并返回它，调用方继续 .fetchone() / .fetchall() / .rowcount 即可。
+    """
+
+    def __init__(self, raw):
+        self._raw = raw
+
+    def execute(self, sql: str, params=None):
+        cur = self._raw.cursor()
+        cur.execute(sql, params)
+        return cur
+
+    def executemany(self, sql: str, seq_of_params=None):
+        cur = self._raw.cursor()
+        cur.executemany(sql, seq_of_params)
+        return cur
+
+    def commit(self):
+        self._raw.commit()
+
+    def rollback(self):
+        self._raw.rollback()
+
+    def close(self):
+        self._raw.close()
+
+
 def _connect():
     """返回数据库连接的抽象句柄（SQLite / Postgres 自动适配）。"""
     if is_postgres():
-        conn = psycopg2.connect(DATABASE_URL, connect_timeout=10)
+        raw = psycopg2.connect(DATABASE_URL, connect_timeout=10)
         # 统一用 RealDictCursor，使行可 dict(row) 且按列名取值
-        conn.cursor_factory = psycopg2.extras.RealDictCursor
-        return conn
+        raw.cursor_factory = psycopg2.extras.RealDictCursor
+        # psycopg2 连接无 .execute()，包装为与 sqlite3 一致的接口（否则 init_db/查询即崩）
+        return _PgConn(raw)
 
     # SQLite：确保目录可写（避免 "readonly database"）；WAL + busy_timeout 降低写锁冲突
     _db_dir = os.path.dirname(DB_PATH)
