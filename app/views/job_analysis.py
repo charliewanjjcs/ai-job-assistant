@@ -159,7 +159,13 @@ def render() -> None:
             base_salary = RuleBasedSalaryProvider() if demo else DeepSeekSalaryProvider(llm=llm)
             salary = TightenedSalaryProvider(base_salary)
             analyzer = CoreAnalyzer(llm=llm, salary_provider=salary)
-            with st.spinner("分析中..."):
+            # 加载动画（st.spinner 是被动遮罩，不增加任何网络/计算开销，只在大模型调用期间显示）
+            spin_msg = (
+                "正在分析中，请稍候…"
+                if demo
+                else "正在分析中，请稍候…（首次调用大模型约需 10~30 秒）"
+            )
+            with st.spinner(spin_msg):
                 report = analyzer.analyze(profile, jd)
         except RuntimeError as e:
             st.error(f"分析失败：{e}")

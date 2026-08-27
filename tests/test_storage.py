@@ -196,6 +196,25 @@ def test_analysis_list_columns_only(db):
     assert "jd_text" not in row
 
 
+def test_analysis_report_excludes_jd_text(db):
+    """get_analysis_report 只取详情渲染所需列，不取 jd_text 等大字段（减小跨网传输体积）。"""
+    uid = storage.get_or_create_user("wechat", "wx-ar5")
+    rid = storage.save_analysis_result(uid, _make_report(), jd_text="应被省略的 JD 原文")
+    row = storage.get_analysis_report(uid, rid)
+    assert row is not None
+    assert row["role"] == "后端工程师"
+    assert row["company"] == "Acme"
+    assert "report_json" in row
+    # 关键：不取 jd_text / skill_score / salary_verdict
+    assert "jd_text" not in row
+    assert "skill_score" not in row
+    assert "salary_verdict" not in row
+    # 反序列化仍可用
+    report = storage.deserialize_report(row["report_json"])
+    assert isinstance(report, Report)
+    assert report.role == "后端工程师"
+
+
 def test_analysis_user_isolation(db):
     a = storage.get_or_create_user("wechat", "wx-a")
     b = storage.get_or_create_user("wechat", "wx-b")

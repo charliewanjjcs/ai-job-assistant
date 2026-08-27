@@ -15,7 +15,8 @@ from app.components.login_form import render_login_form
 def render_auth_sidebar() -> None:
     """渲染登录/退出区（需在 st.sidebar 上下文内调用）。"""
     if auth.is_logged_in():
-        st.success(f"👤 已登录：**{auth.current_display()}**")
+        # 用代码跨度包裹显示名：避免 markdown 把邮箱自动转成 mailto: 超链接（点击会跳去发邮件）
+        st.success(f"👤 已登录：**`{auth.current_display()}`**")
         if st.button("退出登录", key="sb_logout", use_container_width=True):
             auth.logout()
             st.rerun()

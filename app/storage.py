@@ -728,6 +728,25 @@ def get_analysis_result(user_id: int, analysis_id: int) -> dict | None:
         conn.close()
 
 
+def get_analysis_report(user_id: int, analysis_id: int) -> dict | None:
+    """返回渲染「分析结果」详情所需的列（不含 jd_text / skill_score / salary_verdict）。
+
+    详情只用到 role/company/generated_at/report_json/created_at；jd_text 已在详情中
+    移除回显。少取 jd_text 可减小跨 Neon 传输体积，加快切行加载。
+    """
+    conn = _connect()
+    try:
+        row = _execute(
+            conn,
+            """SELECT role, company, generated_at, report_json, created_at
+               FROM analysis_results WHERE id=? AND user_id=?""",
+            (analysis_id, user_id),
+        ).fetchone()
+        return dict(row) if row else None
+    finally:
+        conn.close()
+
+
 def delete_analysis_result(user_id: int, analysis_id: int) -> bool:
     """删除单条（仅限本用户），返回是否真的删除了一行。"""
     conn = _connect()

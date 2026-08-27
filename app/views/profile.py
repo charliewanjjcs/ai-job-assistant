@@ -199,7 +199,7 @@ def render() -> None:
         c1, c2 = st.columns([1, 1])
         if c1.button("保存资料", type="primary", use_container_width=True):
             _save_profile(uid)
-            st.success("资料已保存到本机。")
+            st.success("资料已保存")
         if c2.button("重新载入已保存资料", use_container_width=True):
             # 置空 _active_page，使下次渲染在「widget 实例化之前」于脚本顶部重新载入，
             # 避免「widget 实例化后改 session_state」报错（同之前的 skill_query 修复思路）

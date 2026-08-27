@@ -95,7 +95,12 @@ def render() -> None:
         st.session_state["_collapse_sidebar"] = False
         components.html(_COLLAPSE_SIDEBAR_JS, height=0)
 
-    rows = storage.list_analysis_results(uid)
+    # 进入本页（含切回）时载入一次列表；同页内切换行/重渲染复用缓存，避免每次 rerun 读 Neon。
+    # 删除/清空会 pop 缓存失效（见下方按钮），新分析切回时由 _active_page 守卫重载。
+    if st.session_state.get("_active_page") != "results" or "_results_rows" not in st.session_state:
+        st.session_state["_results_rows"] = storage.list_analysis_results(uid)
+        st.session_state["_active_page"] = "results"
+    rows = st.session_state["_results_rows"]
     if not rows:
         st.info("还没有分析结果。去「职位详情/JD」页粘贴 JD 开始第一次分析吧。")
         return
@@ -152,6 +157,8 @@ def render() -> None:
         if d1.button("删除选中", use_container_width=True):
             storage.delete_analysis_result(uid, selected_id)
             st.session_state.pop("history_df", None)
+            st.session_state.pop("_results_rows", None)
+            st.session_state.pop("_results_detail_cache", None)
             st.rerun()
         if d2.button("清空全部", use_container_width=True):
             st.session_state["_confirm_clear"] = True
@@ -162,20 +169,38 @@ def render() -> None:
                 storage.clear_analysis_results(uid)
                 st.session_state.pop("_confirm_clear", None)
                 st.session_state.pop("history_df", None)
+                st.session_state.pop("_results_rows", None)
+                st.session_state.pop("_results_detail_cache", None)
                 st.rerun()
             if c2.button("取消", use_container_width=True):
                 st.session_state.pop("_confirm_clear", None)
                 st.rerun()
 
     with col_right:
-        row = storage.get_analysis_result(uid, selected_id)
-        if not row:
+        # 详情缓存：切行首次拉取该条 report_json 并缓存，重复点回同一行/页面重渲染零读取
+        detail_cache = st.session_state.setdefault("_results_detail_cache", {})
+        cache_key = f"{uid}:{selected_id}"
+        if cache_key in detail_cache:
+            meta, report = detail_cache[cache_key]
+        else:
+            row = storage.get_analysis_report(uid, selected_id)
+            if row:
+                report = storage.deserialize_report(row["report_json"])
+                meta = {
+                    "role": report.role,
+                    "company": report.company,
+                    "generated_at": report.generated_at or row["created_at"],
+                }
+                detail_cache[cache_key] = (meta, report)
+            else:
+                meta = None
+                report = None
+        if report is None:
             st.info("未找到该记录，可能已被删除。")
         else:
-            report = storage.deserialize_report(row["report_json"])
             # 大标题：岗位名称（上一行）→ 公司名称（下一行），中间换行而非「@」
-            st.markdown(f"#### {report.role or '未命名岗位'}")
-            st.markdown(f"##### {report.company or '—'}")
-            st.caption(f"分析时间：{report.generated_at or row['created_at']}")
+            st.markdown(f"#### {meta['role'] or '未命名岗位'}")
+            st.markdown(f"##### {meta['company'] or '—'}")
+            st.caption(f"分析时间：{meta['generated_at']}")
             render_report(report)
             st.divider()
