@@ -5,6 +5,8 @@ openai>=1.0
 # ===== 前端（Streamlit 网页应用）=====
 # >=1.40 以确保 st.navigation / st.Page（多页面导航）稳定可用
 streamlit>=1.40
+# ===== OAuth（谷歌真实登录：streamlit-oauth 的 popup 流程）=====
+streamlit-oauth>=0.1.14
 # ===== 测试 =====
 pytest>=8.0
 # ===== 第二步：PDF 解析 =====
