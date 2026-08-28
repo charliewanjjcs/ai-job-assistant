@@ -16,6 +16,7 @@ from __future__ import annotations
 import base64
 import json
 import os
+import re
 
 from dotenv import load_dotenv
 
@@ -48,6 +49,19 @@ def is_configured() -> bool:
         and _cfg("GOOGLE_CLIENT_SECRET")
         and _cfg("GOOGLE_REDIRECT_URI")
     )
+
+
+def _normalize_redirect_uri(v: str) -> str:
+    """防御：用户把协议头写重复（如 `https://https://x`）会让 Google 报 400 invalid_request。
+
+    保留最外层 scheme，剥掉后面多余的 `xxx://` 前缀，返回规范的 `https://host/path`。
+    """
+    v = (v or "").strip()
+    if "://" not in v:
+        return v
+    scheme, rest = v.split("://", 1)
+    rest = re.sub(r"^[a-zA-Z][a-zA-Z0-9+.-]*://", "", rest)
+    return f"{scheme}://{rest}"
 
 
 def decode_id_token(id_token: str) -> dict:
@@ -118,7 +132,7 @@ def render_login_button(key_prefix: str = "google") -> None:
     result = oauth2.authorize_button(
         name="使用 Google 登录",
         icon="https://www.google.com/favicon.ico",
-        redirect_uri=_cfg("GOOGLE_REDIRECT_URI"),
+        redirect_uri=_normalize_redirect_uri(_cfg("GOOGLE_REDIRECT_URI")),
         scope="openid email profile",
         key=f"{key_prefix}_oauth",
         extras_params={"prompt": "select_account", "access_type": "offline"},

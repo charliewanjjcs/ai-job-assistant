@@ -74,3 +74,18 @@ def test_upsert_merges_by_email(db):
 def test_is_configured_false_without_secrets(monkeypatch):
     monkeypatch.setattr(google_oauth, "_cfg", lambda key: None)
     assert google_oauth.is_configured() is False
+
+
+def test_normalize_redirect_uri_dedupes_protocol():
+    # 手误写成双协议头（导致 Google 报 400 invalid_request）应被压成单个
+    assert (
+        google_oauth._normalize_redirect_uri(
+            "https://https://ai-job-assistant.streamlit.app/component/streamlit_oauth.authorize_button"
+        )
+        == "https://ai-job-assistant.streamlit.app/component/streamlit_oauth.authorize_button"
+    )
+
+
+def test_normalize_redirect_uri_passthrough():
+    ok = "https://ai-job-assistant.streamlit.app/component/streamlit_oauth.authorize_button"
+    assert google_oauth._normalize_redirect_uri(ok) == ok
