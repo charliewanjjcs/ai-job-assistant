@@ -13,13 +13,15 @@ import app.google_oauth as google_oauth
 def render_login_form(prefix: str = "lf") -> None:
     """渲染登录方式表单。登录成功后内部调用 st.rerun() 关闭弹层并刷新。"""
     st.markdown(
-        "选择登录方式。"
-        "微信/QQ 为模拟登录，**资料按当前浏览器隔离**（换设备/清缓存会进入新账户）；"
-        "**谷歌为真实 OAuth 登录**（需配置 Secrets），登录后资料跨设备跟随；"
-        "需要跨设备持久账户也可用**手机号或邮箱**登录。"
+        "选择登录方式。微信/QQ 为模拟登录，换设备/清缓存会进入新账户；"
+        "谷歌为真实 OAuth 登录，登录后资料跨设备跟随；"
+        "需要跨设备持久账户也可用邮箱登录。"
     )
 
-    c1, c2, c3 = st.columns(3)
+    # 微信/QQ 两列并排（模拟登录）；谷歌为真实 OAuth，独占一行整宽，避免被塞进窄列
+    # 导致按钮文字换行、显得过大。两处挂载点（侧栏 popover / 首页 dialog）共用本函数，
+    # 故所有 widget key 都带 prefix 以区分（含 Google 按钮 key_prefix=prefix）。
+    c1, c2 = st.columns(2)
     if c1.button("微信", key=f"{prefix}_wechat", use_container_width=True):
         # 用每浏览器会话的唯一 id 作身份，避免所有人共用 "simulated" 账户导致资料串号
         auth.login_provider("wechat", auth.session_device_id(), "微信用户")
@@ -27,9 +29,8 @@ def render_login_form(prefix: str = "lf") -> None:
     if c2.button("QQ", key=f"{prefix}_qq", use_container_width=True):
         auth.login_provider("qq", auth.session_device_id(), "QQ 用户")
         st.rerun()
-    with c3:
-        # 真实 Google OAuth（popup 流程）；未配置时组件内给出提示，不阻断其余登录方式
-        google_oauth.render_login_button()
+    # 真实 Google OAuth（popup 流程）；未配置时组件内给出提示，不阻断其余登录方式
+    google_oauth.render_login_button(key_prefix=prefix)
 
     st.divider()
     with st.form(f"{prefix}_phone_form", clear_on_submit=False):

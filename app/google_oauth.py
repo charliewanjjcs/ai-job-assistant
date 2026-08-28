@@ -88,11 +88,15 @@ def upsert_google_user(payload: dict) -> int:
     return int(uid)
 
 
-def render_login_button() -> None:
+def render_login_button(key_prefix: str = "google") -> None:
     """在登录表单里渲染「使用 Google 登录」按钮。
 
     授权成功后：解析 id_token → 落库 → 写入 session_state["user_id"/"user_display"] → rerun。
     未配置 Secrets 时给出提示而非报错（应用其余功能不受影响）。
+
+    key_prefix：必须与所在登录表单的 prefix 一致（如首页 dialog 传 "dlg"、侧栏 popover 传 "sb"），
+    以保证同一页面若同时挂载多个登录表单时，各 Google 按钮的组件 key 唯一，避免
+    StreamlitDuplicateElementKey（登录表单会在侧栏 popover 与首页 dialog 两处同时渲染）。
     """
     if not is_configured():
         st.info(
@@ -116,7 +120,7 @@ def render_login_button() -> None:
         icon="https://www.google.com/favicon.ico",
         redirect_uri=_cfg("GOOGLE_REDIRECT_URI"),
         scope="openid email profile",
-        key="google_oauth",
+        key=f"{key_prefix}_oauth",
         extras_params={"prompt": "select_account", "access_type": "offline"},
         use_container_width=True,
         pkce="S256",
